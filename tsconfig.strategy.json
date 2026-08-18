@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "research/trade-long/strategy.ts",
+    "scripts/strategy-contract.ts",
+    "research/trade-long/premise-contract.ts"
+  ]
+}

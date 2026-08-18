@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+coverage/
+
+# AutoResearch runtime state
+.autoresearch/
+
+# Market data. Derived from Yahoo Finance, which does not permit
+# redistribution, so it is rebuilt locally rather than committed.
+# See SETUP.md: pnpm run market:backfill && pnpm run generate-training
+db/
+research/trade-long/training-data/
+sandbox/
+.opencode
+.strategy-before.ts
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+.cache/
+__pycache__
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editor and IDE files
+.claude/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.#*
+*.bak
+*.orig
+
+# Package manager debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# If you want to track hypothesis, remove hypothesis
+research/trade-long/hypotheses/

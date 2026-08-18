@@ -1,0 +1,48 @@
+{
+  "name": "trade-foundry",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An AutoResearch loop that drives a coding agent to discover and falsify deterministic trading strategies under walk-forward evaluation.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rp7o/trade-foundry.git"
+  },
+  "keywords": [
+    "autoresearch",
+    "trading-strategy",
+    "backtesting",
+    "walk-forward",
+    "agent"
+  ],
+  "packageManager": "pnpm@11.22.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "ar": "tsx src/cli.ts",
+    "cleanup": "tsx scripts/cleanup.ts",
+    "example:simple": "tsx examples/simple/eval.ts",
+    "eval": "tsx research/trade-long/eval.ts",
+    "falsify": "tsx research/trade-long/falsify.ts",
+    "portfolio:diagnose": "tsx research/trade-long/diagnose-portfolio.ts",
+    "strategy:check": "tsc --noEmit -p tsconfig.strategy.json",
+    "strategy:contract": "tsx scripts/strategy-contract.ts",
+    "strategy:shared-contract": "tsx research/engine/strategy-contract.ts research/trade-long/strategy.ts",
+    "strategy:premise": "tsx research/trade-long/premise-contract.ts",
+    "strategy:signal-screen": "tsx research/trade-long/hooks/signal-screen.ts",
+    "archive": "git archive --format=tar.gz -o trade-foundry.tar.gz HEAD",
+    "market:import": "tsx scripts/market-data.ts import",
+    "market:status": "tsx scripts/market-data.ts status",
+    "market:select-universe": "tsx scripts/select-universe.ts",
+    "generate-training": "tsx scripts/generate-training-data.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
