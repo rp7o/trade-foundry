@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "model": "google/timesfm-3.0-pytorch",
+  "revision": "43046b85ec22d584a13f8098c2ed39c889e129c2",
+  "symbols": [
+    "CBA.AX", "BHP.AX", "WBC.AX", "ANZ.AX", "NAB.AX", "CSL.AX",
+    "RIO.AX", "TLS.AX", "FMG.AX", "MQG.AX", "WES.AX", "WOW.AX",
+    "WDS.AX", "TCL.AX", "QBE.AX", "SCG.AX", "AMC.AX", "GMG.AX",
+    "BXB.AX", "STO.AX", "SUN.AX", "ALL.AX", "QAN.AX", "ORG.AX",
+    "IAG.AX", "AGL.AX", "AMP.AX", "ALD.AX", "AZJ.AX", "BSL.AX"
+  ],
+  "context": 256,
+  "stride": 5,
+  "horizons": [1, 5, 10, 20],
+  "momentum_lookback": 20,
+  "direction_deadband_pct": 0.1,
+  "near_tolerances_pct": [0.5, 1.0, 2.0],
+  "development": {"start": "2022-01-01", "end": "2024-12-31"},
+  "holdout": {"start": "2025-01-01", "end": "2025-12-31"},
+  "inference": {
+    "device": "cpu",
+    "batch_size": 16,
+    "threads": 4,
+    "use_symmetric_averaging": false,
+    "use_znorm": false,
+    "sort_quantiles": true
+  }
+}

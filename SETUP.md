@@ -34,6 +34,19 @@ pnpm run market:status        # row counts and date ranges per symbol
 pnpm run generate-training    # writes research/trade-long/training-data/*.csv
 ```
 
+If a local application database at `db/prices.db` contains newer rows, sync
+them into the research database without replacing it:
+
+```bash
+pnpm run market:sync-local
+```
+
+The sync uses each symbol's current maximum date in `db/market.db`, so new
+dates are appended and overlapping dates are skipped. Use `--after YYYY-MM-DD`
+to set an explicit lower bound; the target maximum date remains the effective
+cutoff. The source database is read-only, and all rows are validated before
+the target transaction begins.
+
 To update the database later, export new or overlapping rows in the same format
 and run `market:import` again. Existing `(symbol, date)` rows are updated.
 The importer is the only market-data acquisition path; the repository does not

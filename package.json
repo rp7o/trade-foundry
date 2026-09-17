@@ -15,7 +15,7 @@
     "walk-forward",
     "agent"
   ],
-  "packageManager": "pnpm@11.22.0",
+  "packageManager": "pnpm@11.25.0",
   "type": "module",
   "engines": {
     "node": ">=22.13"
@@ -36,6 +36,7 @@
     "strategy:signal-screen": "tsx research/trade-long/hooks/signal-screen.ts",
     "archive": "git archive --format=tar.gz -o trade-foundry.tar.gz HEAD",
     "market:import": "tsx scripts/market-data.ts import",
+    "market:sync-local": "tsx scripts/sync-market-data.ts",
     "market:status": "tsx scripts/market-data.ts status",
     "market:select-universe": "tsx scripts/select-universe.ts",
     "generate-training": "tsx scripts/generate-training-data.ts"
