@@ -45,6 +45,54 @@ symbols and training cutoff come from the `evaluation` block in
 `evaluation.trainingEnd`; the walk-forward folds and the locked holdout that
 actually score candidates lie strictly after that date.
 
+The importer writes `db/market.db`. Keep `evaluation.dbPath` pointed at that
+database, or supply an equivalent local database at your configured path.
+
+## Optional TimesFM preparation
+
+TimesFM is off unless `evaluation.timesfm` is enabled locally. Forecast
+preparation requires `uv`, which manages a separate Python 3.12 environment
+with pinned TimesFM and CPU PyTorch packages. The first run downloads the
+packages and model weights. Ordinary research needs neither Python nor TimesFM.
+Read the [model licence and setup details](docs/timesfm-strategy-search.md)
+before enabling it.
+
+The optional preparation command reads the database at `evaluation.dbPath`, then generates
+or resumes the forecast campaign described by the pinned settings in
+`docs/timesfm-research.json`:
+
+```bash
+pnpm run research:refresh
+```
+
+`research:refresh` stops after preparation. It does not run an agent loop or
+reset a baseline. It validates forecast coverage for the configured research
+ranges, backs up the local config before enabling the selected campaign,
+generates training inputs, and creates a baseline only when one does not
+already exist. Existing scores and accepted state are preserved. It never
+requires a private `prices.db` or a `--source` database option.
+
+Use `--dry-run` to validate and show the planned ranges and steps without
+writing files, importing a model, or changing configuration:
+
+```bash
+pnpm run research:refresh -- --dry-run
+```
+
+An alternative model settings file may be supplied with `--forecast-config`.
+Research dates always come from the evaluation configuration and market data;
+the settings file cannot override them. After preparation, start the ordinary bounded
+loop separately:
+
+```bash
+pnpm run research:loop
+```
+
+`research:loop` is an alias for the normal loop and does not sync prices,
+generate forecasts, export training data, or reset state. Forecasts are an
+optional feature supplied to the strategy; they do not prescribe an entry,
+exit, sizing rule, or score bonus.
+
 ## 4. Run the checks
 
 ```bash
@@ -60,8 +108,9 @@ pnpm run strategy:contract
 pnpm run ar -- baseline --reset
 ```
 
-With the boilerplate strategy this evaluates to `score: 0.00`, because it makes
-no trades and fails the evaluator's trade-count gate. Check the saved state:
+The neutral scaffold makes no trades. Use the baseline command only when you
+intend to evaluate the current local strategy and save its state; it does not
+create market data or forecasts:
 
 ```bash
 pnpm run ar -- status
@@ -82,15 +131,6 @@ Useful commands:
 pnpm run ar -- --help
 pnpm run ar -- agent-once     # one supervised agent attempt
 pnpm run ar -- run-once       # evaluate the current working tree
-```
-
-## Trying it without market data
-
-The toy example optimises a single number and needs no data, no engine, and no
-agent:
-
-```bash
-pnpm run example:simple
 ```
 
 ## Troubleshooting

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import type { Candle, TradeProposal } from "../research/trade-long/strategy.js";
 import { proposalRewardRisk, worstCaseEntry } from "../research/trade-long/trade-model.js";
+import type { MarketContext } from "../research/trade-long/strategy.js";
 
 const strategy = await import("../research/trade-long/strategy.js") as {
-  proposeTrade: (history: Candle[]) => TradeProposal | null;
+  proposeTrade: (history: Candle[], market?: MarketContext) => TradeProposal | null;
   STRATEGY_BOILERPLATE?: boolean;
 };
 const { proposeTrade } = strategy;
@@ -20,18 +21,28 @@ const histories = [
 let nonNullProposals = 0;
 const contractOutcomes: string[] = [];
 for (const { name, candles } of histories) {
-  const history = candles;
-  const before = JSON.stringify(history);
-  const first = proposeTrade(cloneHistory(history));
-  const second = proposeTrade(cloneHistory(history));
-  assert.deepEqual(second, first, "proposeTrade must be deterministic for identical input");
-  assert.equal(JSON.stringify(history), before, "proposeTrade must not mutate history");
-  assertProposalContract(first);
-  if (first !== null) {
-    nonNullProposals += 1;
-    contractOutcomes.push(`${name}: proposal ${String((first as { setup?: unknown }).setup ?? "unknown setup")}`);
-  } else {
-    contractOutcomes.push(`${name}: null`);
+  for (const predictedReturnPct of [undefined, 2, -2]) {
+    const history = candles;
+    const market = predictedReturnPct === undefined ? undefined : {
+      timesfm: { asOf: history.at(-1)!.date, horizonDays: 10 as const, predictedReturnPct },
+    };
+    const before = JSON.stringify(history);
+    const input = cloneHistory(history);
+    const contextBefore = JSON.stringify(market);
+    const first = proposeTrade(input, market);
+    assert.equal(JSON.stringify(input), before, "proposeTrade must not mutate supplied history");
+    assert.equal(JSON.stringify(market), contextBefore, "proposeTrade must not mutate market context");
+    const second = proposeTrade(cloneHistory(history), market);
+    assert.deepEqual(second, first, "proposeTrade must be deterministic for identical input");
+    assert.equal(JSON.stringify(history), before, "proposeTrade must not mutate history");
+    assertProposalContract(first);
+    const label = `${name} (forecast ${predictedReturnPct ?? "absent"})`;
+    if (first !== null) {
+      nonNullProposals += 1;
+      contractOutcomes.push(`${label}: proposal ${String((first as { setup?: unknown }).setup ?? "unknown setup")}`);
+    } else {
+      contractOutcomes.push(`${label}: null`);
+    }
   }
 }
 

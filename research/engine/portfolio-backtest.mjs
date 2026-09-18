@@ -13,6 +13,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { buildAlignedIndex } from "./market-context.mjs";
+import { timesfmAsOf } from "./timesfm-context.mjs";
 
 export const SCHEMA_VERSION = "trading-strategy-engine.v1";
 
@@ -240,7 +241,10 @@ export async function runPortfolioBacktest(context, options = {}) {
 
   const marketSlice = (symbol, count) => {
     const aligned = indexData[symbol];
-    return aligned ? { index: aligned.slice(0, count) } : undefined;
+    // Data transport only: the strategy owns any use of forecasts in proposals.
+    const timesfm = timesfmAsOf(context.timesfm_forecasts, symbol, symbolData[symbol][count - 1]?.date);
+    if (!aligned && !timesfm) return undefined;
+    return { ...(aligned ? { index: aligned.slice(0, count) } : {}), ...(timesfm ? { timesfm } : {}) };
   };
 
   const allDates = [...allDatesSet].sort();

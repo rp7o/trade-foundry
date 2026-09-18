@@ -13,6 +13,7 @@ export interface EngineCandle {
 }
 
 export interface PortfolioBacktestContext {
+  timesfm_forecasts?: import("./timesfm-context.mjs").TimesfmForecasts;
   symbols: Record<string, EngineCandle[]>;
   initial_capital?: number;
   risk_per_trade?: number;

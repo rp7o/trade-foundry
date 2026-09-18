@@ -49,21 +49,30 @@ gates.
 | pnpm 11 | `corepack enable` picks up the pinned version. |
 | A coding-agent CLI | `pi` by default; `codex` also supported. Optional — the harness runs without one, you just drive it manually. |
 
-There is nothing else to install. The backtest engine is vendored in
-`research/engine/` and imported directly, so a clone plus `pnpm install` has
-everything it needs to score a strategy.
+The backtest engine is vendored in `research/engine/` and imported directly.
+Ordinary evaluation needs only these tools and locally imported market data.
+Optional TimesFM preparation additionally uses `uv`, Python 3.12, and a local
+model download; see [setup](SETUP.md#optional-timesfm-preparation).
 
 ## Quickstart
 
-The repository ships **no market data**. Obtain daily market data from a
-provider whose licence permits your intended use, then import it locally. The
-CSV must contain `symbol,date,open,high,low,close,adj_close,volume`.
+The repository ships **no market data and no actual trading strategy**. The
+tracked strategy is a neutral contract scaffold. Obtain daily market data from
+a provider whose licence permits your intended use, then import it locally.
+The CSV must contain `symbol,date,open,high,low,close,adj_close,volume`.
 
 ```bash
 pnpm install
 pnpm run market:import -- ./path/to/licensed-prices.csv
 pnpm run generate-training    # writes research/trade-long/training-data/*.csv
 ```
+
+TimesFM is an optional, local-only forecast feature. It is disabled by
+default. After importing data into the configured `db/market.db`, prepare a
+pinned forecast campaign with `pnpm run research:refresh`; see
+[`docs/timesfm-strategy-search.md`](docs/timesfm-strategy-search.md). This
+workflow does not publish data, forecasts, model weights, campaign results, or
+an actual strategy.
 
 Then verify the checks and the evaluator:
 
@@ -87,13 +96,9 @@ pnpm run ar -- agent-once
 pnpm run ar -- loop
 ```
 
-`SETUP.md` covers the same ground step by step. To see the harness working
-without any trading setup at all, run the toy example — it optimises a single
-number and needs no market data:
-
-```bash
-pnpm run example:simple
-```
+`SETUP.md` covers the same ground step by step. The harness can be installed
+and typechecked without market data; evaluation and research require the local
+database described above.
 
 ## Choosing an agent
 
@@ -159,12 +164,10 @@ stability.
 src/                      domain-neutral harness (CLI, ledger, git, metrics)
 research/engine/          vendored backtest engine, imported as a library
 research/trade-long/      all trading-domain knowledge
-  strategy.ts             global champion
+  strategy.ts             neutral strategy contract scaffold
   eval.ts                 frozen evaluator
-  hypotheses/<id>/        per-hypothesis incumbent, direction, falsifications
   training-data/          generated OHLCV CSVs (not committed)
 scripts/                  market data, agent launcher, contract checks
-examples/simple/          toy research program, no market data needed
 docs/                     design and planning notes
 test/                     unit tests
 ```
@@ -172,13 +175,6 @@ test/                     unit tests
 The boundary between `src/` and `research/` is strict: `src/` is domain-neutral
 infrastructure and must contain no trading knowledge. Read the local `README.md`
 in each directory before changing files there.
-
-### Committed research history
-
-`research/trade-long/hypotheses/` contains the real output of past runs —
-accepted incumbents, per-cycle evidence, and falsification logs. These are
-committed deliberately as a record of what the loop actually explored and
-rejected. They are not required to run anything.
 
 ## Key files
 

@@ -42,6 +42,8 @@ export const STRATEGY_BOILERPLATE = true;
 export interface MarketContext {
   index?: Candle[];
   volatility?: Candle[];
+  /** Optional exact-date forecast. Percent units: 2 means +2%, not confidence. */
+  timesfm?: { asOf: string; horizonDays: 10; predictedReturnPct: number };
 }
 
 export function proposeTrade(

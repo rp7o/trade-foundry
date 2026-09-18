@@ -1,4 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { loadTimesfmFeatures, validateTimesfmConfig, type TimesfmConfig } from "../../scripts/timesfm-features.js";
+import type { TimesfmForecasts } from "../engine/timesfm-context.mjs";
 import type { Candle } from "./strategy.js";
 import { runPortfolioBacktestInWorker, SCHEMA_VERSION } from "../engine/index.mjs";
 import type { PortfolioBacktestResult } from "../engine/index.mjs";
@@ -25,6 +28,9 @@ export interface ExecutionCosts {
 }
 
 export interface EvaluationConfig {
+  trainingStart?: string;
+  evaluationEnd?: string;
+  timesfm?: TimesfmConfig;
   dbPath: string;
   symbols: string[];
   trainingEnd: string;
@@ -68,13 +74,23 @@ const STRATEGY_PATH = "research/trade-long/strategy.ts";
 const WINDOWED_STRATEGY_PATH = ".autoresearch/trade-long/windowed-strategy.ts";
 const MARKET_CONTEXT_PATH = ".autoresearch/trade-long/market-context.json";
 
-export function loadEvaluationConfig(): EvaluationConfig {
-  const raw = JSON.parse(readFileSync("autoresearch.config.json", "utf8")) as {
+export function loadEvaluationConfig(configPath = "autoresearch.config.json"): EvaluationConfig {
+  const raw = JSON.parse(readFileSync(configPath, "utf8")) as {
     evaluation?: Partial<EvaluationConfig>;
     executionCosts?: Partial<ExecutionCosts>;
   };
   const evaluation = raw.evaluation;
   if (!evaluation) throw new Error("autoresearch.config.json must define evaluation");
+  if (evaluation.evaluationEnd !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(evaluation.evaluationEnd)) {
+    throw new Error("evaluationEnd must be YYYY-MM-DD");
+  }
+  if (evaluation.timesfm) {
+    validateTimesfmConfig(evaluation.timesfm);
+  }
+  if (evaluation.trainingStart !== undefined &&
+      (!/^\d{4}-\d{2}-\d{2}$/.test(evaluation.trainingStart) || evaluation.trainingStart > evaluation.trainingEnd!)) {
+    throw new Error("trainingStart must be YYYY-MM-DD and no later than trainingEnd");
+  }
   const {
     dbPath, symbols, trainingEnd, foldStart, foldMonths, foldCount, rollingYears,
   } = evaluation;
@@ -105,6 +121,9 @@ export function loadEvaluationConfig(): EvaluationConfig {
     throw new Error("executionCosts must define non-negative brokeragePerSide and slippageBpsPerSide");
   }
   return {
+    trainingStart: evaluation.trainingStart,
+    evaluationEnd: evaluation.evaluationEnd,
+    timesfm: evaluation.timesfm,
     dbPath,
     symbols: symbols as string[],
     trainingEnd: trainingEnd as string,
@@ -139,6 +158,13 @@ function previousDay(date: string): string {
 }
 
 export function foldRanges(config: EvaluationConfig, latestDate?: string): DateRange[] {
+  if (config.evaluationEnd) {
+    const ranges = foldRanges({ ...config, evaluationEnd: undefined });
+    if (ranges.at(-1)?.end !== config.evaluationEnd || config.trainingEnd >= ranges[0].start) {
+      throw new Error("Fixed evaluation folds must follow training and end exactly at evaluationEnd");
+    }
+    return ranges;
+  }
   if (latestDate) {
     const totalMonths = config.rollingYears * 12;
     if (totalMonths % config.foldMonths !== 0 || config.foldCount !== totalMonths / config.foldMonths) {
@@ -202,7 +228,7 @@ export function loadAllCandles(config: EvaluationConfig): Record<string, Candle[
   const raw = querySymbols(config.dbPath, config.symbols);
   const result: Record<string, Candle[]> = {};
   for (const symbol of config.symbols) {
-    const rows = raw[symbol] ?? [];
+    const rows = (raw[symbol] ?? []).filter(row => !config.evaluationEnd || row.date <= config.evaluationEnd);
     if (rows.length < LOOKBACK_DAYS) {
       throw new Error(`not enough ${symbol} rows for ${LOOKBACK_DAYS}-day strategy window: ${rows.length}`);
     }
@@ -356,14 +382,55 @@ function ensureWindowedStrategy(): void {
       "  }",
       "  return market;",
       "}",
-      "export function proposeTrade(history) {",
+      "export function proposeTrade(history, suppliedMarket) {",
       `  const trimmed = history.slice(-${LOOKBACK_DAYS});`,
       "  const lastDate = trimmed[trimmed.length - 1]?.date ?? \"\";",
-      "  return baseProposeTrade(trimmed, marketAsOf(lastDate));",
+      "  return baseProposeTrade(trimmed, { ...suppliedMarket, ...marketAsOf(lastDate) });",
       "}",
       "",
     ].join("\n"),
   );
+}
+
+export interface BacktestFeatures {
+  timesfm?: TimesfmForecasts;
+}
+
+export function trainingForecastRange(config: EvaluationConfig): DateRange {
+  if (config.trainingStart) return { name: "training", start: config.trainingStart, end: config.trainingEnd };
+  const db = new DatabaseSync(config.dbPath, { readOnly: true });
+  try {
+    const query = db.prepare("SELECT MIN(date) AS first FROM prices WHERE symbol = ? AND date <= ?");
+    const starts = config.symbols.map(symbol => {
+      const first = query.get(symbol, config.trainingEnd)?.first;
+      if (typeof first !== "string") throw new Error(`No training data for ${symbol}`);
+      return first;
+    });
+    return { name: "training", start: starts.sort()[0], end: config.trainingEnd };
+  } finally { db.close(); }
+}
+
+/** Uses the same latest configured-symbol date and fold calculation as evaluation. */
+export function researchForecastRanges(config: EvaluationConfig): DateRange[] {
+  const db = new DatabaseSync(config.dbPath, { readOnly: true });
+  let latest: string;
+  try {
+    const query = db.prepare("SELECT MAX(date) AS last FROM prices WHERE symbol = ? AND date <= ?");
+    latest = config.symbols.map(symbol => {
+      const last = query.get(symbol, config.evaluationEnd ?? "9999-12-31")?.last;
+      if (typeof last !== "string") throw new Error(`No evaluation data for ${symbol}`);
+      return last;
+    }).sort().at(-1)!;
+  } finally { db.close(); }
+  const training = trainingForecastRange(config);
+  const folds = foldRanges(config, latest);
+  if (training.end >= folds[0].start) throw new Error("Forecast training and evaluation ranges must not overlap");
+  return [training, ...folds];
+}
+
+export function loadEvaluationFeatures(config: EvaluationConfig, ranges?: DateRange[]) {
+  if (!config.timesfm) return undefined;
+  return loadTimesfmFeatures(config.timesfm, config.symbols, ranges ?? researchForecastRanges(config));
 }
 
 function sliceWindow(
@@ -389,8 +456,10 @@ async function runSharedBacktest(
   windowCandles: Record<string, Candle[]>,
   profile: ScoreProfile,
   costs: ExecutionCosts,
+  features: BacktestFeatures = {},
 ): Promise<WindowProfileResult> {
   const payload = {
+    timesfm_forecasts: features.timesfm,
     symbols: windowCandles,
     initial_capital: INITIAL_CAPITAL,
     risk_per_trade: RISK_FRACTION,
@@ -494,6 +563,7 @@ export async function runWindow(
   allCandles: Record<string, Candle[]>,
   range: DateRange,
   costs: ExecutionCosts,
+  features: BacktestFeatures = {},
 ): Promise<WindowResult> {
   ensureWindowedStrategy();
   const windowCandles = sliceWindow(allCandles, range);
@@ -505,7 +575,7 @@ export async function runWindow(
   const results = await mapLimit(
     SCORE_PROFILES,
     SCORE_PROFILES.length,
-    (profile) => runSharedBacktest(windowCandles, profile, costs),
+    (profile) => runSharedBacktest(windowCandles, profile, costs, features),
   );
   const profileResults = Object.fromEntries(
     SCORE_PROFILES.map((profile, i) => [profile, results[i]])
@@ -531,6 +601,7 @@ export async function runWindows(
   allCandles: Record<string, Candle[]>,
   ranges: DateRange[],
   costs: ExecutionCosts,
+  features: BacktestFeatures = {},
 ): Promise<WindowResult[]> {
   ensureWindowedStrategy();
   // Flatten fold × profile so the limiter sees every engine invocation.
@@ -544,7 +615,7 @@ export async function runWindows(
   const results = await mapLimit(
     tasks,
     ENGINE_CONCURRENCY,
-    (task) => runSharedBacktest(task.windowCandles, task.profile, costs),
+    (task) => runSharedBacktest(task.windowCandles, task.profile, costs, features),
   );
 
   return ranges.map((range, r) => {
@@ -575,13 +646,14 @@ export async function runModerateFoldScores(
   allCandles: Record<string, Candle[]>,
   ranges: DateRange[],
   costs: ExecutionCosts,
+  features: BacktestFeatures = {},
 ): Promise<number[]> {
   ensureWindowedStrategy();
   const tasks = ranges.map((range) => ({ range, windowCandles: sliceWindow(allCandles, range) }));
   const results = await mapLimit(
     tasks,
     ENGINE_CONCURRENCY,
-    (task) => runSharedBacktest(task.windowCandles, "moderate", costs),
+    (task) => runSharedBacktest(task.windowCandles, "moderate", costs, features),
   );
   return tasks.map((task, i) =>
     scoreProfileWindow("moderate", results[i], task.range, windowDatesFor(task.windowCandles, task.range)).score
