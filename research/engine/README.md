@@ -28,6 +28,13 @@ const result = await runPortfolioBacktest(context, {
 });
 ```
 
+Callers may supply `context.timesfm_forecasts`, a symbol/date map of
+`{ asOf, horizonDays: 10, predictedReturnPct }` records. The engine passes only
+the current symbol's exact-date record as `market.timesfm` in the strategy's
+optional second argument. It never carries forecasts forward or turns them
+into trading rules. Omitting the map preserves the existing behavior; the
+output schema and execution/scoring rules are unchanged.
+
 A backtest is CPU-bound and fully synchronous once started, so running several
 on the calling thread serialises them. Use the worker form for fold sweeps and
 cap the concurrency yourself:

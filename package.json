@@ -21,11 +21,13 @@
     "node": ">=22.13"
   },
   "scripts": {
+    "research:refresh": "tsx scripts/refresh-research.ts",
+    "research:loop": "tsx src/cli.ts loop",
+    "test:timesfm": "python3 -m unittest discover -s test -p 'test_timesfm_*.py'",
     "check": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "ar": "tsx src/cli.ts",
     "cleanup": "tsx scripts/cleanup.ts",
-    "example:simple": "tsx examples/simple/eval.ts",
     "eval": "tsx research/trade-long/eval.ts",
     "falsify": "tsx research/trade-long/falsify.ts",
     "portfolio:diagnose": "tsx research/trade-long/diagnose-portfolio.ts",

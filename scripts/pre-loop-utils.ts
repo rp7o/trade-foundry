@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { loadEvaluationConfig, loadEvaluationFeatures } from "../research/trade-long/walkforward.js";
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -20,6 +21,8 @@ function scoringHash(configPath: string, paths: string[]): void {
     hash.update("<config-missing>");
   }
   hash.update("\0");
+  const features = loadEvaluationFeatures(loadEvaluationConfig(configPath));
+  if (features) hash.update(stableJson(features.metadata));
   for (const path of paths) {
     try { hash.update(readFileSync(path)); } catch { hash.update("<missing>"); }
     hash.update("\0");

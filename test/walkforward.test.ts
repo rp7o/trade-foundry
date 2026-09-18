@@ -60,6 +60,13 @@ test("fold ranges cover exactly the latest rolling three years", () => {
   assert.equal(ranges[0].start, "2022-06-30");
   assert.equal(ranges.at(-1)?.end, "2025-06-30");
   assert.equal(ranges[1].start, "2022-12-30");
+  const fixed = { ...config, trainingStart: "2022-01-01", trainingEnd: "2022-12-31",
+    foldStart: "2023-01-01", foldCount: 4, rollingYears: 2, evaluationEnd: "2024-12-31" };
+  const fixedRanges = foldRanges(fixed, "2026-09-01");
+  assert.equal(fixedRanges[0].start, "2023-01-01");
+  assert.equal(fixedRanges.at(-1)?.end, "2024-12-31");
+  assert.throws(() => foldRanges({ ...fixed, trainingEnd: "2023-01-01" }), /follow training/);
+  assert.throws(() => foldRanges({ ...fixed, evaluationEnd: "2025-12-31" }), /end exactly/);
 });
 
 test("fold aggregation wires return breadth and drawdown into promotion diagnostics", () => {

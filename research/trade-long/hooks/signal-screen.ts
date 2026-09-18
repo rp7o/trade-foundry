@@ -9,16 +9,19 @@ import { proposeTrade } from "../strategy.js";
 import {
   loadAllCandles,
   loadEvaluationConfig,
+  loadEvaluationFeatures,
+  trainingForecastRange,
   loadMarketCandles,
   LOOKBACK_DAYS,
 } from "../walkforward.js";
 
 const config = loadEvaluationConfig();
+const features = loadEvaluationFeatures(config, config.timesfm ? [trainingForecastRange(config)] : undefined);
 const result = runSignalScreen(
   loadAllCandles(config),
   loadMarketCandles(config),
   proposeTrade,
-  { trainingEnd: config.trainingEnd, lookback: LOOKBACK_DAYS },
+  { trainingStart: config.trainingStart, trainingEnd: config.trainingEnd, lookback: LOOKBACK_DAYS, timesfm: features?.forecasts },
 );
 
 console.log("--- Signal Screen (training window only) ---");

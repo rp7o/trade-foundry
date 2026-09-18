@@ -17,6 +17,7 @@ import {
   foldRanges,
   loadAllCandles,
   loadEvaluationConfig,
+  loadEvaluationFeatures,
   runWindows,
   writeMarketContext,
   INITIAL_CAPITAL,
@@ -30,6 +31,7 @@ import {
 const ARTIFACT_PATH = ".autoresearch/trade-long/latest.json";
 
 const config = loadEvaluationConfig();
+const features = loadEvaluationFeatures(config);
 const allCandles = loadAllCandles(config);
 const marketSeries = writeMarketContext(config);
 const latestDataDate = Object.values(allCandles)
@@ -39,7 +41,7 @@ const latestDataDate = Object.values(allCandles)
 if (!latestDataDate) throw new Error("evaluation data contains no candles");
 const folds = foldRanges(config, latestDataDate);
 
-const foldResults = await runWindows(allCandles, folds, config.executionCosts);
+const foldResults = await runWindows(allCandles, folds, config.executionCosts, { timesfm: features?.forecasts });
 const aggregate = aggregateFolds(foldResults);
 interface FoldTrade extends WindowTrade {
   fold: string;
@@ -162,6 +164,7 @@ const artifact = {
       foldMonths: config.foldMonths,
       foldCount: config.foldCount,
       marketSeries,
+      timesfm: features?.metadata ?? null,
       minAvgTradedValue: MIN_AVG_TRADED_VALUE,
       rollingYears: config.rollingYears,
     },

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { openMarketDatabase, queryPrices } from "./market-db.js";
+import { loadEvaluationConfig, trainingForecastRange } from "../research/trade-long/walkforward.js";
+import { loadTimesfmFeatures } from "./timesfm-features.js";
 
 const CONFIG_PATH = "autoresearch.config.json";
 const OUT_DIR = "research/trade-long/training-data";
@@ -14,8 +16,10 @@ function writeCsv(path: string, rows: Array<Record<string, string | number>>): v
 }
 
 function main(): void {
-  const config = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as { evaluation: { dbPath: string; symbols: string[]; trainingEnd: string } };
-  const { dbPath, symbols, trainingEnd } = config.evaluation;
+  const config = loadEvaluationConfig(CONFIG_PATH);
+  const { dbPath, symbols, trainingEnd } = config;
+  const features = config.timesfm ? loadTimesfmFeatures(config.timesfm, symbols,
+    [trainingForecastRange(config)]) : undefined;
   const db = openMarketDatabase(dbPath);
   try {
     mkdirSync(OUT_DIR, { recursive: true });
@@ -47,6 +51,13 @@ function main(): void {
       console.log(`  market-${name} (${symbol}): ${rows.length} rows`);
     }
     console.log(`\nGenerated training data CSV files for ${count} stocks`);
+    if (features) {
+      for (const [symbol, forecasts] of Object.entries(features.forecasts)) {
+        const rows = Object.values(forecasts).map(f => `${f.asOf},${f.horizonDays},${f.predictedReturnPct}`);
+        writeFileSync(`${OUT_DIR}/timesfm-${symbol}.csv`, `asOf,horizonDays,predictedReturnPct\n${rows.join("\n")}\n`);
+      }
+      console.log(`Generated training-only TimesFM features from ${features.metadata.campaign}`);
+    }
   } finally {
     db.close();
   }
