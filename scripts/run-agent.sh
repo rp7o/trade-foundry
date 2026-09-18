@@ -144,6 +144,11 @@ Your job is to make ONE targeted, well-reasoned change that you hypothesize will
 - 90-bar uptrend with a late pullback
 - 30-bar steady uptrend
 
+Each is tested with missing, positive, and negative synthetic TimesFM context.
+Returning null when the forecast is absent is allowed; at least one scenario
+must produce a valid proposal. A forecast-dependent strategy does not need a
+fabricated OHLCV fallback merely to pass the contract.
+
 Your strategy must return a non-null valid proposal for at least one of these histories. Do not make every entry path depend on conditions absent from those fixtures, such as unusual volume spikes, rare volatility compression, calendar effects, or extreme oscillators. If the contract fails with "proposeTrade must return a proposal for at least one contract history", loosen or adapt the trigger until one contract history produces a proposal while preserving valid risk geometry.
 
 ## STRATEGY GUIDELINES
@@ -221,7 +226,8 @@ an improvement; do not make an arbitrary numeric-only change merely to produce
 activity. A well-reasoned negative result is preferable to evaluator chasing.
 
 # TECHNICAL CONSTRAINTS
-* **Pure Stateless Generator**: `proposeTrade` must be completely stateless. It receives no capital, position state, prior trade outcomes, or future candles. It sees only the trailing candle history. Do not make assumptions about capital, open-trade state, or prior proposals. Emit honest, market-derived signals; the evaluator handles all execution and trade state.
+* **Optional TimesFM data**: `market?.timesfm` may contain `{ asOf, horizonDays: 10, predictedReturnPct }` for this stock at the last history date. `2` means +2%, not confidence. This is another data source: decide whether and how to use it for your hypothesis, or ignore it entirely. No check requires its use; execution and scoring are unchanged. Missing means unavailable, not zero; document how your strategy handles it. Training-only `training-data/timesfm-*.csv` files are allowed inputs. The harness supplies forecasts only when configured; do not access the database or import model libraries. Declare this optional field in your local MarketContext type if needed. Do not add fields to TradeProposal.
+* **Pure Stateless Generator**: `proposeTrade` must be completely stateless. It receives no capital, position state, prior trade outcomes, or future candles. It sees trailing candle history and optional date-aligned market context. Do not make assumptions about capital, open-trade state, or prior proposals. Emit honest, market-derived signals; the evaluator handles all execution and trade state.
 
 # STRICT RULES & BOUNDARIES
 1. **Strategy Title**: The first thing you must write in `strategy.md` is a short, descriptive slug on the `## Title:` line (e.g. `## Title: multi-curve-sma`). Use lowercase-hyphenated words, max 4 words, capturing the core mathematical idea.
@@ -258,6 +264,13 @@ build_training_sample() {
     head -1 "$f"
     tail -6 "$f"
     printf '```\n\n'
+    f="research/trade-long/training-data/timesfm-${sym}.AX.csv"
+    if [[ -f "$f" ]]; then
+      printf '%s.AX TimesFM training features (percent units):\n```csv\n' "$sym"
+      head -1 "$f"
+      tail -6 "$f"
+      printf '```\n\n'
+    fi
   done
 }
 training_sample="$(build_training_sample)"

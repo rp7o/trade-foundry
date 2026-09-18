@@ -40,6 +40,8 @@ export const STRATEGY_BOILERPLATE = true;
  * Matching training CSVs are provided as training-data/market-<name>.csv.
  */
 export interface MarketContext {
+  /** Optional exact-date forecast data. Strategy may use or ignore it and owns missing-data behavior. Percent units, not confidence. */
+  timesfm?: { asOf: string; horizonDays: 10; predictedReturnPct: number };
   index?: Candle[];
   volatility?: Candle[];
 }

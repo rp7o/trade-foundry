@@ -16,8 +16,9 @@
 // agents to run themselves (`pnpm run strategy:signal-screen`).
 
 import type { Candle, TradeProposal } from "./strategy.js";
+import { timesfmAsOf, type TimesfmForecast, type TimesfmForecasts } from "../engine/timesfm-context.mjs";
 
-export type ProposeFn = (history: Candle[], market?: Record<string, Candle[]>) => TradeProposal | null;
+export type ProposeFn = (history: Candle[], market?: { index?: Candle[]; volatility?: Candle[]; timesfm?: TimesfmForecast }) => TradeProposal | null;
 
 export interface SignalScreenResult {
   signals: number;
@@ -63,7 +64,7 @@ export function runSignalScreen(
   allCandles: Record<string, Candle[]>,
   marketCandles: Record<string, Candle[]>,
   propose: ProposeFn,
-  options: { trainingEnd: string; lookback: number; minSignals?: number },
+  options: { trainingStart?: string; trainingEnd: string; lookback: number; minSignals?: number; timesfm?: TimesfmForecasts },
 ): SignalScreenResult {
   const { trainingEnd, lookback } = options;
   const minSignals = options.minSignals ?? SCREEN_MIN_SIGNALS;
@@ -89,6 +90,7 @@ export function runSignalScreen(
       let sum = 0;
       let count = 0;
       for (let entry = lookback; entry + horizon < candles.length; entry++) {
+        if (options.trainingStart && candles[entry - 1].date < options.trainingStart) continue;
         sum += candles[entry + horizon].close / candles[entry].open - 1;
         count++;
       }
@@ -98,8 +100,12 @@ export function runSignalScreen(
     };
 
     for (let i = lookback - 1; i < candles.length - 1; i++) {
+      if (options.trainingStart && candles[i].date < options.trainingStart) continue;
       const window = candles.slice(i - lookback + 1, i + 1);
-      const market = marketAsOf(trainingMarket, candles[i].date, lookback);
+      const market = {
+        ...marketAsOf(trainingMarket, candles[i].date, lookback),
+        timesfm: timesfmAsOf(options.timesfm, symbol, candles[i].date),
+      };
       let proposal: TradeProposal | null;
       try {
         proposal = propose(window, market);

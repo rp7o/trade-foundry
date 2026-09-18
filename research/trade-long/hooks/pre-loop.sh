@@ -52,7 +52,7 @@ mkdir -p "$(dirname "$VERSION_FILE")"
 # a spurious full rescore + streak reset (defeating stagnation/retirement) even
 # though a strategy's score is unaffected.
 compute_version() {
-  pnpm exec tsx scripts/pre-loop-utils.ts hash "$CONFIG_JSON" "$PRICES_DB" "$EVAL_TS" "$WALKFORWARD_TS" "$SIGNAL_SCREEN_TS" "$SCORE_MODEL_TS" "$TRADE_MODEL_TS"
+  pnpm exec tsx scripts/pre-loop-utils.ts hash "$CONFIG_JSON" "$PRICES_DB" "$EVAL_TS" "$WALKFORWARD_TS" "$SIGNAL_SCREEN_TS" "$SCORE_MODEL_TS" "$TRADE_MODEL_TS" scripts/timesfm-features.ts research/engine/timesfm-context.mjs research/engine/portfolio-backtest.mjs
 }
 
 NEW_VERSION="$(compute_version)"

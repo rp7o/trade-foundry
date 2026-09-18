@@ -43,14 +43,22 @@ async function main() {
 
   let nonNullProposals = 0;
   for (const history of histories) {
-    const before = JSON.stringify(history);
-    const market = { index: makeMarketIndex(history) };
-    const first = proposeTrade(cloneHistory(history), market);
-    const second = proposeTrade(cloneHistory(history), market);
-    assert.deepEqual(second, first, "proposeTrade must be deterministic for identical input");
-    assert.equal(JSON.stringify(history), before, "proposeTrade must not mutate history");
-    assertProposalContract(first);
-    if (first !== null) nonNullProposals += 1;
+    for (const predictedReturnPct of [undefined, 2, -2]) {
+      const before = JSON.stringify(history);
+      const market = { index: makeMarketIndex(history), ...(predictedReturnPct === undefined ? {} : {
+        timesfm: { asOf: history.at(-1)!.date, horizonDays: 10, predictedReturnPct },
+      }) };
+      const contextBefore = JSON.stringify(market);
+      const input = cloneHistory(history);
+      const first = proposeTrade(input, market);
+      assert.equal(JSON.stringify(input), before, "proposeTrade must not mutate supplied history");
+      assert.equal(JSON.stringify(market), contextBefore, "proposeTrade must not mutate market context");
+      const second = proposeTrade(cloneHistory(history), market);
+      assert.deepEqual(second, first, "proposeTrade must be deterministic for identical input");
+      assert.equal(JSON.stringify(history), before, "proposeTrade must not mutate history");
+      assertProposalContract(first);
+      if (first !== null) nonNullProposals += 1;
+    }
   }
 
   if (isNeutralBoilerplate && nonNullProposals === 0) {

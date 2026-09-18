@@ -62,6 +62,25 @@ for a days-to-weeks swing book. If you use market context, the strategy MUST
 still return valid, deterministic proposals when it is absent or a series is
 missing. Only use it where it is consistent with the active hypothesis direction.
 
+## TimesFM Forecast Feature (Optional)
+
+When enabled by the operator, `market.timesfm` contains only the current stock's
+exact-date 10-session forecast: `{ asOf, horizonDays: 10, predictedReturnPct }`.
+It is computed from historical candles only and injected by the harness. A value
+of 2 means a predicted +2% return, NOT a 2% probability or confidence score.
+Forecasts may be sparse; absence is not zero. Return null or use a documented
+OHLCV fallback when absent. Never load a database, infer a symbol, or carry a
+forecast forward inside the strategy. No model libraries are needed.
+
+This is another available data source, not a prescribed signal or strategy.
+You decide whether and how it supports the active hypothesis, or ignore it
+entirely. No check requires using forecasts, and the evaluator gives no reward
+for using them. The normal structural-research and parameter-search rules apply.
+Document any use and missing-data behavior in strategy.md. Training-only
+forecast CSVs (`training-data/timesfm-*.csv`) are allowed research inputs and
+samples are embedded in the agent prompt when available. The raw cache and
+evaluation/holdout outcomes remain forbidden. Execution and scoring are unchanged.
+
 ## Hypothesis Direction
 
 Read `research/trade-long/hypothesis.md` before starting any work. This file
