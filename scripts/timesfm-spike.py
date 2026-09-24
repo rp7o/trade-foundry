@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--db", type=Path, default=ROOT / "db/market.db")
+    parser.add_argument("--db", type=Path, default=Path.cwd() / "db/market.db")
     parser.add_argument("--symbol", default="CBA.AX")
     parser.add_argument("--context", type=int, default=256)
     parser.add_argument("--horizon", type=int, default=10)

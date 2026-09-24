@@ -66,5 +66,5 @@ export async function commitFiles(cwd: string, files: string[], message: string)
   }
 
   await execFileAsync("git", ["add", "--", ...files], { cwd });
-  await execFileAsync("git", ["commit", "-m", message], { cwd });
+  await execFileAsync("git", ["commit", "--only", "-m", message, "--", ...files], { cwd });
 }

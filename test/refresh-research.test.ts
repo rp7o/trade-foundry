@@ -106,8 +106,8 @@ test("dry run is read-only and needs no Python or model installation", t => {
 
 test("research:loop invokes only the existing loop", () => {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-  assert.equal(pkg.scripts["research:loop"], "tsx src/cli.ts loop");
-  assert.equal(pkg.scripts["research:refresh"], "tsx scripts/refresh-research.ts");
+  assert.equal(pkg.scripts["research:loop"], "node scripts/workspace.mjs run tsx src/cli.ts loop");
+  assert.equal(pkg.scripts["research:refresh"], "node scripts/workspace.mjs run tsx scripts/refresh-research.ts");
 });
 
 test("missing prices, invalid settings and overlapping dates fail before writes or subprocesses", t => {

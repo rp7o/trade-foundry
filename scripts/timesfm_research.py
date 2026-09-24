@@ -92,7 +92,7 @@ class ResearchWindow:
 
 def inference_identity(settings):
     sources = (
-        Path(__file__),
+        Path(__file__).resolve(),
         ROOT / "scripts/timesfm_inputs.py",
         ROOT / "scripts/timesfm-research.py",
         ROOT / "scripts/timesfm-research.py.lock",

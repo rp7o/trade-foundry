@@ -13,7 +13,7 @@ export interface RefreshOptions {
 
 export function parseRefreshArgs(args: string[]): RefreshOptions {
   if (args[0] === "--") args = args.slice(1);
-  const options: RefreshOptions = { forecastConfig: "docs/timesfm-research.json", dryRun: false, help: false };
+  const options: RefreshOptions = { forecastConfig: existsSync("timesfm-research.json") ? "timesfm-research.json" : "docs/timesfm-research.json", dryRun: false, help: false };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--prepare-only") continue;
@@ -144,7 +144,7 @@ Start research separately with: pnpm run research:loop`);
   refreshResearch(process.cwd(), options);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { main(); } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

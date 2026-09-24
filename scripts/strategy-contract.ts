@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import type { Candle, TradeProposal } from "../research/trade-long/strategy.js";
 import { proposalRewardRisk, worstCaseEntry } from "../research/trade-long/trade-model.js";
 import type { MarketContext } from "../research/trade-long/strategy.js";
 
-const strategy = await import("../research/trade-long/strategy.js") as {
+const strategy = await import(pathToFileURL(path.resolve("research/trade-long/strategy.ts")).href) as {
   proposeTrade: (history: Candle[], market?: MarketContext) => TradeProposal | null;
   STRATEGY_BOILERPLATE?: boolean;
 };

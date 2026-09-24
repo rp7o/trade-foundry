@@ -5,7 +5,8 @@
 // Usage: pnpm run strategy:signal-screen
 
 import { runSignalScreen, SCREEN_MIN_SIGNALS } from "../signal-screen.js";
-import { proposeTrade } from "../strategy.js";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   loadAllCandles,
   loadEvaluationConfig,
@@ -15,6 +16,7 @@ import {
   LOOKBACK_DAYS,
 } from "../walkforward.js";
 
+const { proposeTrade } = await import(pathToFileURL(path.resolve("research/trade-long/strategy.ts")).href);
 const config = loadEvaluationConfig();
 const features = loadEvaluationFeatures(config, config.timesfm ? [trainingForecastRange(config)] : undefined);
 const result = runSignalScreen(

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cp, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, readFile, readlink, rm, stat, symlink } from "node:fs/promises";
 import path from "node:path";
 import { statePath } from "./ledger.js";
 
@@ -8,6 +8,7 @@ export interface Snapshot {
   rootDir: string;
   dir: string;
   paths: string[];
+  links?: Record<string, string>;
 }
 
 export interface FileManifest {
@@ -21,6 +22,7 @@ export async function createSnapshot(rootDir: string, paths: string[], id: strin
   await mkdir(snapshotDir, { recursive: true });
 
   const existingPaths: string[] = [];
+  const links: Record<string, string> = {};
   for (const relativePath of uniqueNormalized(paths)) {
     const absolutePath = path.join(rootDir, relativePath);
     if (!await exists(absolutePath)) {
@@ -28,7 +30,9 @@ export async function createSnapshot(rootDir: string, paths: string[], id: strin
     }
     const targetPath = path.join(snapshotDir, relativePath);
     await mkdir(path.dirname(targetPath), { recursive: true });
-    await cp(absolutePath, targetPath, { recursive: true, force: true });
+    if ((await lstat(absolutePath)).isSymbolicLink()) links[relativePath] = await readlink(absolutePath);
+    // Freeze contents, not live links to mutable engine files.
+    await cp(absolutePath, targetPath, { recursive: true, force: true, dereference: true });
     existingPaths.push(relativePath);
   }
 
@@ -36,7 +40,8 @@ export async function createSnapshot(rootDir: string, paths: string[], id: strin
     id,
     rootDir,
     dir: snapshotDir,
-    paths: existingPaths
+    paths: existingPaths,
+    links,
   };
 }
 
@@ -44,6 +49,23 @@ export async function restoreSnapshot(snapshot: Snapshot): Promise<void> {
   for (const relativePath of snapshot.paths) {
     const sourcePath = path.join(snapshot.dir, relativePath);
     const targetPath = path.join(snapshot.rootDir, relativePath);
+    const originalLink = snapshot.links?.[relativePath];
+    if (originalLink) {
+      const originalTarget = path.resolve(path.dirname(targetPath), originalLink);
+      const before = await fileHashes(sourcePath, relativePath);
+      const after = await fileHashes(originalTarget, relativePath);
+      if (before.size !== after.size || [...before].some(([file, hash]) => after.get(file) !== hash)) {
+        await rm(originalTarget, { recursive: true, force: true });
+        await cp(sourcePath, originalTarget, { recursive: true, force: true });
+      }
+      // Keep the link topology even if an editor replaced a link with a file.
+      const currentLink = await readlink(targetPath).catch(() => undefined);
+      if (currentLink !== originalLink) {
+        await rm(targetPath, { recursive: true, force: true });
+        await symlink(originalLink, targetPath);
+      }
+      continue;
+    }
     await rm(targetPath, { recursive: true, force: true });
     await mkdir(path.dirname(targetPath), { recursive: true });
     await cp(sourcePath, targetPath, { recursive: true, force: true });

@@ -9,6 +9,7 @@
 // The evaluator keeps an anchored start and extends through the latest data.
 
 import { mkdirSync, writeFileSync } from "node:fs";
+import { researchProvenance } from "../../scripts/research-provenance.js";
 import { SCORE_PROFILES } from "./score-model.js";
 import {
   aggregateFolds,
@@ -30,6 +31,7 @@ import {
 } from "./walkforward.js";
 
 const ARTIFACT_PATH = ".autoresearch/trade-long/latest.json";
+const provenance = researchProvenance();
 
 const config = loadEvaluationConfig();
 const features = loadEvaluationFeatures(config);
@@ -145,6 +147,7 @@ console.log(`score: ${finalScore.toFixed(2)}`);
 // score gradient alone.
 
 const artifact = {
+  provenance,
   primary: {
     name: "walkForwardScore",
     value: Number(finalScore.toFixed(2)),

@@ -1,5 +1,8 @@
 # Trade Foundry AutoResearch
 
+For versioned personal strategies without maintaining a second engine checkout,
+see [private research workspaces](SETUP.md#private-research-workspaces).
+
 <!-- Agents: do not use README.md as your instruction source. Read AGENTS.md instead. -->
 
 An **AutoResearch loop**: a harness that repeatedly hands a coding agent one
