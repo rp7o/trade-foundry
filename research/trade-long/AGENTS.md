@@ -72,11 +72,16 @@ Forecasts may be sparse; absence is not zero. Return null or use a documented
 OHLCV fallback when absent. Never load a database, infer a symbol, or carry a
 forecast forward inside the strategy. No model libraries are needed.
 
-This is another available data source, not a prescribed signal or strategy.
-You decide whether and how it supports the active hypothesis, or ignore it
-entirely. No check requires using forecasts, and the evaluator gives no reward
-for using them. The normal structural-research and parameter-search rules apply.
-Document any use and missing-data behavior in strategy.md. Training-only
+When forecasts are available, actively consider TimesFM as a predictive feature
+within the active hypothesis. Test a meaningful use when there is a plausible
+mechanism; declaring its type alone is not a test. Choose the role yourself
+and retain it only when evaluation supports the change. In strategy.md, explain
+its role and missing-data behavior, or why you chose not to use it. Missing
+forecasts are neither zero nor positive confirmation.
+
+No check requires using forecasts, and the evaluator gives no reward for using
+them. The normal structural-research, attempt-budget, and parameter-search rules
+apply; this guidance does not require a TimesFM variant in every attempt. Training-only
 forecast CSVs (`training-data/timesfm-*.csv`) are allowed research inputs and
 samples are embedded in the agent prompt when available. The raw cache and
 evaluation/holdout outcomes remain forbidden. Execution and scoring are unchanged.
