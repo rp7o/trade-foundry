@@ -13,6 +13,15 @@ export async function isInsideGitRepo(cwd: string): Promise<boolean> {
   }
 }
 
+export async function isIgnored(cwd: string, file: string): Promise<boolean> {
+  try {
+    await execFileAsync("git", ["check-ignore", "-q", "--no-index", "--", file], { cwd });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function listChangedFiles(cwd: string): Promise<string[]> {
   const { stdout } = await execFileAsync("git", ["status", "--porcelain"], { cwd });
   return stdout

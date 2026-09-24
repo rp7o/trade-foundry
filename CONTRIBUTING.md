@@ -49,11 +49,10 @@ read the local one before editing.
 - **Don't commit secrets.** No API keys, no `.env` files, no agent credentials.
   If you add a new agent integration, read its key from the environment and
   document the variable name.
-- **The tracked strategy is intentionally neutral.** Do not commit private
-  strategy candidates, market data, forecast caches, campaign IDs, reports, or
-  model weights. Strategy edits are tracked by Git, so use a separate local
-  clone without a remote for personal research when the result should stay
-  private.
+- **Working research files are ignored.** The tracked boilerplate is neutral;
+  install creates local strategy, hypothesis, ledger, and config files from it.
+  Do not force-add private strategies, campaign IDs, data, reports, or model
+  weights. Use a private repository if you want to version personal research.
 
 ## Reporting a strategy result
 

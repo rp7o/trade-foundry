@@ -1,0 +1,130 @@
+{
+  "hooks": {
+    "workflow": "research/trade-long/hooks/workflow.ts"
+  },
+  "commands": {
+    "setup": "",
+    "experiment": "pnpm run eval",
+    "candidateChecks": [
+      "pnpm run strategy:check",
+      "pnpm run strategy:contract",
+      "pnpm run strategy:shared-contract",
+      "pnpm run strategy:premise"
+    ],
+    "prepareCandidate": "pnpm exec tsx research/trade-long/hooks/parameter-search.ts",
+    "preLoop": "bash research/trade-long/hooks/pre-loop.sh"
+  },
+  "metric": {
+    "name": "walkForwardScore",
+    "regex": "^score:\\s*(-?[0-9.]+)",
+    "artifactPath": ".autoresearch/trade-long/latest.json"
+  },
+  "executionCosts": {
+    "brokeragePerSide": 3,
+    "slippageBpsPerSide": 5
+  },
+  "evaluation": {
+    "dbPath": "db/market.db",
+    "symbols": [
+      "CBA.AX",
+      "BHP.AX",
+      "WBC.AX",
+      "ANZ.AX",
+      "NAB.AX",
+      "CSL.AX",
+      "RIO.AX",
+      "TLS.AX",
+      "FMG.AX",
+      "MQG.AX",
+      "WES.AX",
+      "WOW.AX",
+      "WDS.AX",
+      "TCL.AX",
+      "QBE.AX",
+      "SCG.AX",
+      "AMC.AX",
+      "GMG.AX",
+      "BXB.AX",
+      "STO.AX",
+      "SUN.AX",
+      "ALL.AX",
+      "QAN.AX",
+      "ORG.AX",
+      "IAG.AX",
+      "AGL.AX",
+      "AMP.AX",
+      "ALD.AX",
+      "AZJ.AX",
+      "BSL.AX"
+    ],
+    "trainingEnd": "2017-12-31",
+    "foldStart": "2018-01-01",
+    "foldMonths": 6,
+    "foldCount": 6,
+    "rollingYears": 3
+  },
+  "acceptance": {
+    "minDeltaPct": 0.01
+  },
+  "scope": {
+    "editable": [
+      "research/trade-long/strategy.ts",
+      "research/trade-long/strategy.md"
+    ],
+    "persistent": [
+      "research/trade-long/falsifications.md",
+      "research/trade-long/falsifications-global.md"
+    ],
+    "frozen": [
+      "src/",
+      "research/engine/",
+      "scripts/",
+      "docs/timesfm-research.json",
+      "research/trade-long/eval.ts",
+      "research/trade-long/walkforward.ts",
+      "research/trade-long/signal-screen.ts",
+      "research/trade-long/significance.ts",
+      "research/trade-long/score-model.ts",
+      "research/trade-long/trade-model.ts",
+      "research/trade-long/hypotheses.ts",
+      "research/trade-long/hooks/",
+      "research/trade-long/hypothesis.md",
+      "autoresearch.config.json",
+      "db/market.db"
+    ]
+  },
+  "budget": {
+    "timeoutSeconds": 600
+  },
+  "git": {
+    "enabled": true,
+    "autoRevertRejected": false
+  },
+  "agent": {
+    "command": "bash scripts/run-agent.sh",
+    "timeoutSeconds": 360,
+    "provider": "pi",
+    "model": "",
+    "reasoningEffort": ""
+  },
+  "loop": {
+    "maxIterations": 20,
+    "maxNonImprovingRuns": 0
+  },
+  "tradeLong": {
+    "numSlots": 6,
+    "maturationBlockSize": 1,
+    "structuralAttemptsPerCycle": 8,
+    "maxCyclesPerLineage": 3
+  },
+  "accepted": {
+    "preserve": [
+      ".autoresearch/trade-long/latest.json",
+      "research/trade-long/strategy.ts",
+      "research/trade-long/strategy.md",
+      "research/trade-long/hypothesis.md",
+      "research/trade-long/falsifications.md",
+      "research/trade-long/falsifications-global.md"
+    ]
+  }
+}

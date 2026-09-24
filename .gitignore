@@ -8,6 +8,14 @@ coverage/
 # AutoResearch runtime state
 .autoresearch/
 
+# Working research files are created from tracked templates on install.
+autoresearch.config.json
+research/trade-long/strategy.ts
+research/trade-long/strategy.md
+research/trade-long/hypothesis.md
+research/trade-long/falsifications.md
+research/trade-long/falsifications-global.md
+
 # Market data and generated training inputs stay local.
 # See SETUP.md: pnpm run market:import && pnpm run generate-training
 db/
@@ -63,5 +71,5 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# If you want to track hypothesis, remove hypothesis
+# Generated hypothesis lineages contain private research.
 research/trade-long/hypotheses/

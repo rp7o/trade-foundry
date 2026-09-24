@@ -3,7 +3,7 @@ import path from "node:path";
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { loadConfig } from "../../../src/config.js";
 import { checkScope } from "../../../src/guards.js";
-import { commitFiles, dirtyStatus, isInsideGitRepo, listChangedFiles, listChangedFilesForPaths, revertFiles } from "../../../src/git.js";
+import { commitFiles, dirtyStatus, isIgnored, isInsideGitRepo, listChangedFiles, listChangedFilesForPaths, revertFiles } from "../../../src/git.js";
 import {
   bestPath,
   ensureState,
@@ -1221,6 +1221,12 @@ async function preserveRootChampion(cwd: string): Promise<void> {
 async function ensureAutoCommitReady(cwd: string, config: Config): Promise<void> {
   if (!await isInsideGitRepo(cwd)) {
     throw new Error("--commit-accepted requires a git repo");
+  }
+
+  for (const file of config.scope.editable) {
+    if (await isIgnored(cwd, file)) {
+      throw new Error(`--commit-accepted cannot commit ignored research files (${file}); use a private repo that tracks them`);
+    }
   }
 
   const dirtyCommitFiles = await listChangedFilesForPaths(cwd, commitPaths(config));

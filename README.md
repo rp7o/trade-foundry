@@ -56,8 +56,9 @@ model download; see [setup](SETUP.md#optional-timesfm-preparation).
 
 ## Quickstart
 
-The repository ships **no market data and no actual trading strategy**. The
-tracked strategy is a neutral contract scaffold. Obtain daily market data from
+The repository ships **no market data and no actual trading strategy**. Install
+creates ignored working files from neutral tracked templates, preserving any
+existing local strategy or configuration. Obtain daily market data from
 a provider whose licence permits your intended use, then import it locally.
 The CSV must contain `symbol,date,open,high,low,close,adj_close,volume`.
 
@@ -164,7 +165,8 @@ stability.
 src/                      domain-neutral harness (CLI, ledger, git, metrics)
 research/engine/          vendored backtest engine, imported as a library
 research/trade-long/      all trading-domain knowledge
-  strategy.ts             neutral strategy contract scaffold
+  strategy-boilerplate.ts tracked neutral contract scaffold
+  strategy.ts             ignored working strategy (created on install)
   eval.ts                 frozen evaluator
   training-data/          generated OHLCV CSVs (not committed)
 scripts/                  market data, agent launcher, contract checks
@@ -179,7 +181,8 @@ in each directory before changing files there.
 ## Key files
 
 - `AGENTS.md` — operational rules for automated agents.
-- `autoresearch.config.json` — harness commands, metric, scope, agent config.
+- `autoresearch.example.json` — tracked default for the ignored local config.
+- `autoresearch.config.json` — local harness commands, metric, scope, agent config.
 - `src/README.md` — harness ownership and restrictions.
 - `research/README.md` — research-domain ownership rules.
 - `research/engine/README.md` — the vendored backtest engine and its API.

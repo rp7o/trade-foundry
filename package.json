@@ -21,6 +21,8 @@
     "node": ">=22.13"
   },
   "scripts": {
+    "postinstall": "node scripts/init-local.mjs",
+    "init:local": "node scripts/init-local.mjs",
     "research:refresh": "tsx scripts/refresh-research.ts",
     "research:loop": "tsx src/cli.ts loop",
     "timesfm:search-config": "tsx scripts/timesfm-search-config.ts",

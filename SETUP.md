@@ -14,6 +14,17 @@ Step-by-step first run. See `README.md` for what this project is.
 pnpm install
 ```
 
+Install creates local, ignored strategy, hypothesis, ledger, and config files
+from tracked templates only when they are missing. It never overwrites existing
+research. If install scripts were skipped, run `pnpm run init:local`.
+
+The public config template leaves TimesFM disabled. `research:refresh` enables
+its selected campaign only in your ignored `autoresearch.config.json`.
+Because working strategy files are ignored, `--commit-accepted` is unavailable
+in this public checkout; use a private repository that tracks them if you want
+Git commits of accepted candidates. Research snapshots still live locally in
+`.autoresearch/`.
+
 ## 3. Build the market data
 
 No market data is committed. Obtain daily market data from a provider whose
