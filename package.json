@@ -32,7 +32,6 @@
     "test": "node --import tsx --test test/*.test.ts",
     "ar": "node scripts/workspace.mjs run tsx src/cli.ts",
     "cleanup": "node scripts/workspace.mjs run tsx scripts/cleanup.ts",
-    "example:simple": "tsx examples/simple/eval.ts",
     "eval": "node scripts/workspace.mjs run tsx research/trade-long/eval.ts",
     "falsify": "node scripts/workspace.mjs run tsx research/trade-long/falsify.ts",
     "portfolio:diagnose": "node scripts/workspace.mjs run tsx research/trade-long/diagnose-portfolio.ts",
