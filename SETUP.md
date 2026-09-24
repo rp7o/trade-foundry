@@ -49,6 +49,12 @@ for one command with `TRADE_FOUNDRY_WORKSPACE=/path/to/workspace`; use
 clears the saved selection. Do not switch workspaces or edit shared engine code
 while a loop is running.
 
+Evaluation periods use `evaluation.foldMonths` in the workspace config. The
+optional `evaluation.minPositiveFoldRate` sets the share of positive periods
+required for promotion (default `0.6`); the count rounds up. For example,
+`0.5625` requires 9 of 16 periods. As new periods arrive, the required count
+scales with their total. Zero-return periods do not count as positive.
+
 After cloning your private repo on another machine, install dependencies in the
 engine checkout, then run:
 

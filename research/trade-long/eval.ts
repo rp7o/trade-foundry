@@ -4,7 +4,7 @@
 // in autoresearch.config.json (evaluation block). Each fold is backtested
 // through the shared portfolio engine across the three portfolio profiles and
 // scored with the cross-profile score model. The emitted walkForwardScore is
-// full-period portfolio profit after costs; yearly folds test robustness.
+// full-period portfolio profit after costs; configured folds test robustness.
 //
 // The evaluator keeps an anchored start and extends through the latest data.
 
@@ -32,6 +32,7 @@ const ARTIFACT_PATH = ".autoresearch/trade-long/latest.json";
 const provenance = researchProvenance();
 
 const config = loadEvaluationConfig();
+const minimumPositiveRate = config.minPositiveFoldRate ?? MIN_POSITIVE_FOLD_RATE;
 const portfolio = resolvePortfolioSettings(config.portfolio);
 const { initialCapital: INITIAL_CAPITAL, maxPositions: MAX_POSITIONS, minAvgTradedValue: MIN_AVG_TRADED_VALUE } = portfolio;
 const features = loadEvaluationFeatures(config);
@@ -45,7 +46,7 @@ if (!latestDataDate) throw new Error("evaluation data contains no candles");
 const folds = foldRanges(config, latestDataDate);
 
 const foldResults = await runWindows(allCandles, folds, config.executionCosts, { timesfm: features?.forecasts, portfolio });
-const aggregate = aggregateFolds(foldResults);
+const aggregate = aggregateFolds(foldResults, minimumPositiveRate);
 // Rank on one cost-aware portfolio path. Fold runs are independent stress
 // diagnostics; their reset capital must not define total growth.
 const fullPeriod = await runWindow(allCandles,
@@ -69,7 +70,9 @@ const fullPeriodProfits = folds.map((range) => {
   previousPeriodCapital = lastPoint.capital;
   return { name: range.name, profit: Number(profit.toFixed(2)) };
 });
-const positivePeriodGate = assessPositiveFoldReturnGate(fullPeriodProfits.map((period) => period.profit));
+const positivePeriodGate = assessPositiveFoldReturnGate(
+  fullPeriodProfits.map((period) => period.profit), minimumPositiveRate
+);
 
 const totalModerateTrades = allModerateTrades.length;
 const totalModerateProfit = allModerateTrades.reduce((sum, trade) => sum + trade.profit, 0);
@@ -84,8 +87,8 @@ const finalScore = fullPeriod.combined.score;
 // ─── Promotion gates (do NOT affect the score) ─────────────────────────────────
 // Enforced at champion promotion by the workflow hook, never at lineage
 // acceptance — acceptance follows the score gradient. A candidate is
-// promotable only when at least 60% of years are profitable and drawdown
-// stays within the 30% ceiling across each year and the full period.
+// promotable only when the configured share of periods is profitable and
+// drawdown stays within the 30% ceiling across each fold and the full period.
 
 const positiveReturnFoldsPass = positivePeriodGate.passed;
 const maximumDrawdownPass = aggregate.maxFoldDrawdownPct <= MAX_FOLD_DRAWDOWN_PCT;
@@ -133,7 +136,7 @@ console.log(`minAvgTradedVal:  ${MIN_AVG_TRADED_VALUE}`);
 console.log(`marketSeries:     ${marketSeries.join(",") || "none"}`);
 console.log(`evaluationPeriod: ${folds[0].start} → ${folds.at(-1)?.end}`);
 console.log(`folds:            ${folds.length} x ${config.foldMonths} months`);
-console.log(`positiveReturnPeriods: ${positivePeriodGate.positiveFolds}/${folds.length} (${(positivePeriodGate.positiveFoldRate * 100).toFixed(1)}%; min ${(MIN_POSITIVE_FOLD_RATE * 100).toFixed(0)}% to promote)`);
+console.log(`positiveReturnPeriods: ${positivePeriodGate.positiveFolds}/${folds.length} (${(positivePeriodGate.positiveFoldRate * 100).toFixed(1)}%; min ${positivePeriodGate.minimumPositiveFolds}/${folds.length}, ${minimumPositiveRate * 100}% to promote)`);
 console.log(`maxFoldDrawdown:     ${aggregate.maxFoldDrawdownPct.toFixed(2)}% (max ${MAX_FOLD_DRAWDOWN_PCT}% to promote)`);
 console.log(`sampleAdequacy:      ${sampleAdequacy.totalTrades} trades, ${sampleAdequacy.emptyFolds} inactive period(s) (min ${sampleAdequacy.minTotalTrades} trades, active in at least half the periods)`);
 console.log(`medianFoldScore:     ${aggregate.medianFoldScore.toFixed(2)}`);
@@ -188,6 +191,7 @@ const artifact = {
       latestDataDate,
       foldMonths: config.foldMonths,
       foldCount: config.foldCount,
+      minPositiveFoldRate: minimumPositiveRate,
       marketSeries,
       timesfm: features?.metadata ?? null,
       minAvgTradedValue: MIN_AVG_TRADED_VALUE,

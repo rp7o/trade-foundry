@@ -39,6 +39,7 @@ export interface EvaluationConfig {
   foldStart: string;
   foldMonths: number;
   foldCount: number;
+  minPositiveFoldRate?: number;
   rollingYears: number;
   executionCosts: ExecutionCosts;
 }
@@ -136,6 +137,12 @@ export function parseEvaluationConfig(raw: {
   if (!Number.isInteger(foldCount) || (foldCount as number) <= 0) {
     throw new Error("evaluation.foldCount must be a positive integer");
   }
+  const minPositiveFoldRate = evaluation.minPositiveFoldRate === undefined
+    ? MIN_POSITIVE_FOLD_RATE : evaluation.minPositiveFoldRate;
+  if (typeof minPositiveFoldRate !== "number" || !Number.isFinite(minPositiveFoldRate) ||
+      minPositiveFoldRate <= 0 || minPositiveFoldRate > 1) {
+    throw new Error("evaluation.minPositiveFoldRate must be greater than 0 and at most 1");
+  }
   if (!Number.isInteger(rollingYears) || (rollingYears as number) <= 0) {
     throw new Error("evaluation.rollingYears must be a positive integer");
   }
@@ -157,6 +164,7 @@ export function parseEvaluationConfig(raw: {
     foldStart: foldStart as string,
     foldMonths: foldMonths as number,
     foldCount: foldCount as number,
+    minPositiveFoldRate,
     rollingYears: rollingYears as number,
     executionCosts: { brokeragePerSide, slippageBpsPerSide },
     portfolio: resolvePortfolioSettings(evaluation.portfolio),
@@ -710,10 +718,12 @@ export interface PositiveFoldReturnGate {
   minimumPositiveFolds: number;
 }
 
-export function assessPositiveFoldReturnGate(foldReturns: number[]): PositiveFoldReturnGate {
+export function assessPositiveFoldReturnGate(
+  foldReturns: number[], minimumRate = MIN_POSITIVE_FOLD_RATE
+): PositiveFoldReturnGate {
   const positiveFolds = foldReturns.filter((value) => value > 0).length;
   const totalFolds = foldReturns.length;
-  const minimumPositiveFolds = Math.ceil(totalFolds * MIN_POSITIVE_FOLD_RATE);
+  const minimumPositiveFolds = Math.ceil(totalFolds * minimumRate);
   return {
     passed: totalFolds > 0 && positiveFolds >= minimumPositiveFolds,
     positiveFolds,
@@ -773,11 +783,13 @@ export interface WalkForwardAggregate {
   gateFailures: string[];
 }
 
-export function aggregateFolds(folds: WindowResult[]): WalkForwardAggregate {
+export function aggregateFolds(
+  folds: WindowResult[], minimumRate = MIN_POSITIVE_FOLD_RATE
+): WalkForwardAggregate {
   const foldScores = folds.map((fold) => fold.combined.score);
   const medianFoldScore = median(foldScores);
   const foldReturns = folds.map((fold) => fold.profileScores.moderate.earnedProfit);
-  const positiveFoldGate = assessPositiveFoldReturnGate(foldReturns);
+  const positiveFoldGate = assessPositiveFoldReturnGate(foldReturns, minimumRate);
   const drawdownGate = assessMaximumDrawdownGate(
     folds.map((fold) => fold.profileScores.moderate.maxDrawdownPct)
   );

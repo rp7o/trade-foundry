@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import {
   aggregateFolds,
   assessMaximumDrawdownGate,
   assessPositiveFoldReturnGate,
   assessSampleAdequacyGate,
   foldRanges,
+  parseEvaluationConfig,
   MIN_TOTAL_TRADES,
   MAX_FOLD_DRAWDOWN_PCT,
   MIN_POSITIVE_FOLD_RATE,
@@ -28,6 +30,26 @@ test("zero-return folds do not count as positive folds", () => {
 
   assert.equal(result.positiveFolds, 1);
   assert.equal(result.passed, false);
+});
+
+test("configured positive-return rate requires nine of sixteen periods", () => {
+  const raw = JSON.parse(readFileSync(new URL("../autoresearch.example.json", import.meta.url), "utf8"));
+  assert.equal(parseEvaluationConfig(raw).minPositiveFoldRate, 0.6);
+  raw.evaluation.minPositiveFoldRate = 9 / 16;
+  const rate = parseEvaluationConfig(raw).minPositiveFoldRate;
+  const nine = [...Array(9).fill(1), ...Array(7).fill(-1)];
+  assert.equal(assessPositiveFoldReturnGate(nine, rate).minimumPositiveFolds, 9);
+  assert.equal(assessPositiveFoldReturnGate(nine, rate).passed, true);
+  assert.equal(assessPositiveFoldReturnGate(nine).passed, false);
+  assert.equal(assessPositiveFoldReturnGate([...Array(8).fill(1), ...Array(8).fill(0)], rate).passed, false);
+  assert.equal(aggregateFolds(nine.map(earnedProfit => ({
+    combined: { score: earnedProfit },
+    profileScores: { moderate: { earnedProfit, maxDrawdownPct: 0 } },
+  } as WindowResult)), rate).minimumPositiveFolds, 9);
+  for (const invalid of [0, -1, 1.01, NaN, Infinity, null, "0.5625"]) {
+    raw.evaluation.minPositiveFoldRate = invalid;
+    assert.throws(() => parseEvaluationConfig(raw), /minPositiveFoldRate/);
+  }
 });
 
 test("drawdown at 30% is accepted but anything above it fails", () => {
