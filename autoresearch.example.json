@@ -23,8 +23,25 @@
     "brokeragePerSide": 3,
     "slippageBpsPerSide": 5
   },
+  "setup": {
+    "exchange": "ASX",
+    "currency": "AUD",
+    "timesfmRequested": false
+  },
+  "data": {
+    "sourcePath": "db/prices.db"
+  },
   "evaluation": {
     "dbPath": "db/market.db",
+    "portfolio": {
+      "initialCapital": 10000,
+      "maxPositions": 2,
+      "minAvgTradedValue": 2000000
+    },
+    "marketSymbols": {
+      "index": "^AXJO",
+      "volatility": "^AXVI"
+    },
     "symbols": [
       "CBA.AX",
       "BHP.AX",

@@ -23,6 +23,7 @@
   "scripts": {
     "postinstall": "node scripts/init-local.mjs",
     "init:local": "node scripts/init-local.mjs",
+    "setup": "tsx scripts/setup.ts",
     "workspace": "node scripts/workspace.mjs",
     "research:refresh": "node scripts/workspace.mjs run tsx scripts/refresh-research.ts",
     "research:loop": "node scripts/workspace.mjs run tsx src/cli.ts loop",

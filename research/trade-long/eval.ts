@@ -22,10 +22,8 @@ import {
   runWindows,
   runWindow,
   writeMarketContext,
-  INITIAL_CAPITAL,
+  resolvePortfolioSettings,
   MAX_FOLD_DRAWDOWN_PCT,
-  MAX_POSITIONS,
-  MIN_AVG_TRADED_VALUE,
   MIN_POSITIVE_FOLD_RATE,
   type WindowTrade,
 } from "./walkforward.js";
@@ -34,6 +32,8 @@ const ARTIFACT_PATH = ".autoresearch/trade-long/latest.json";
 const provenance = researchProvenance();
 
 const config = loadEvaluationConfig();
+const portfolio = resolvePortfolioSettings(config.portfolio);
+const { initialCapital: INITIAL_CAPITAL, maxPositions: MAX_POSITIONS, minAvgTradedValue: MIN_AVG_TRADED_VALUE } = portfolio;
 const features = loadEvaluationFeatures(config);
 const allCandles = loadAllCandles(config);
 const marketSeries = writeMarketContext(config);
@@ -44,13 +44,13 @@ const latestDataDate = Object.values(allCandles)
 if (!latestDataDate) throw new Error("evaluation data contains no candles");
 const folds = foldRanges(config, latestDataDate);
 
-const foldResults = await runWindows(allCandles, folds, config.executionCosts, { timesfm: features?.forecasts });
+const foldResults = await runWindows(allCandles, folds, config.executionCosts, { timesfm: features?.forecasts, portfolio });
 const aggregate = aggregateFolds(foldResults);
 // Rank on one cost-aware portfolio path. Fold runs are independent stress
 // diagnostics; their reset capital must not define total growth.
 const fullPeriod = await runWindow(allCandles,
   { name: "full-period", start: folds[0].start, end: folds.at(-1)!.end },
-  config.executionCosts, { timesfm: features?.forecasts });
+  config.executionCosts, { timesfm: features?.forecasts, portfolio });
 interface FoldTrade extends WindowTrade {
   fold: string;
 }
@@ -181,6 +181,7 @@ const artifact = {
     evaluation: {
       mode: "walk-forward",
       scoringModel: "continuous-portfolio-v1",
+      portfolio,
       dbPath: config.dbPath,
       rollingStart: folds[0].start,
       rollingEnd: folds.at(-1)?.end,

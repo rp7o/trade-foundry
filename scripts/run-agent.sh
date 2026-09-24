@@ -250,23 +250,24 @@ activity. A well-reasoned negative result is preferable to evaluator chasing.
 9. **No Scoring Self-Runs**: Do NOT run `pnpm run eval`, `tsx research/trade-long/eval.ts`, or any other harness scoring/experiment script yourself. The harness runs `eval` under its own time budget after your code passes its gates. Your verify steps are strictly limited to the harness checks `pnpm run strategy:check`, `pnpm run strategy:contract`, `pnpm run strategy:shared-contract`, `pnpm run strategy:premise` (all four are required — see the Verify gate above; run them as many times as needed to get them green) and `pnpm run strategy:signal-screen` (training-window entry-alpha screen; at most 3 runs per turn). Re-reading prior run output is also disallowed — trust the harness to score you.
 EOF
 
-# Inject diverse, TRAINING-WINDOW-truncated OHLCV samples (bank/miner/defensive)
+# Inject TRAINING-WINDOW-truncated OHLCV samples from the configured universe
 # read live from the training CSVs — so nothing past trainingEnd can leak, and the
 # sample self-updates whenever the training window changes. ~6 rows/symbol is
 # enough to gauge price scale and volatility per sector without token bloat.
 build_training_sample() {
-  local pair sym desc f
-  for pair in "CBA:bank" "BHP:miner" "WOW:defensive"; do
-    sym="${pair%%:*}"; desc="${pair##*:}"
-    f="research/trade-long/training-data/${sym}.AX.csv"
+  local sym f
+  local -a symbols
+  IFS=',' read -r -a symbols <<< "$(pnpm exec tsx scripts/read-config.ts evaluation.symbols)"
+  for sym in "${symbols[@]:0:3}"; do
+    f="research/trade-long/training-data/${sym}.csv"
     [[ -f "$f" ]] || continue
-    printf '%s.AX (%s):\n```csv\n' "$sym" "$desc"
+    printf '%s:\n```csv\n' "$sym"
     head -1 "$f"
     tail -6 "$f"
     printf '```\n\n'
-    f="research/trade-long/training-data/timesfm-${sym}.AX.csv"
+    f="research/trade-long/training-data/timesfm-${sym}.csv"
     if [[ -f "$f" ]]; then
-      printf '%s.AX TimesFM training features (percent units):\n```csv\n' "$sym"
+      printf '%s TimesFM training features (percent units):\n```csv\n' "$sym"
       head -1 "$f"
       tail -6 "$f"
       printf '```\n\n'

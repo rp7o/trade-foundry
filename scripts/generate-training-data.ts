@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 import { mkdirSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { openMarketDatabase, queryPrices } from "./market-db.js";
-import { loadEvaluationConfig, trainingForecastRange } from "../research/trade-long/walkforward.js";
+import { loadEvaluationConfig, trainingForecastRange, MARKET_SYMBOLS } from "../research/trade-long/walkforward.js";
 import { loadTimesfmFeatures } from "./timesfm-features.js";
 
 const CONFIG_PATH = "autoresearch.config.json";
 const OUT_DIR = "research/trade-long/training-data";
 const MIN_TRAINING_ROWS = 500;
-const MARKET_SYMBOLS = { index: "^AXJO", volatility: "^AXVI" };
 
 function writeCsv(path: string, rows: Array<Record<string, string | number>>): void {
   const fields = ["date", "open", "high", "low", "close", "volume"];
@@ -17,6 +16,7 @@ function writeCsv(path: string, rows: Array<Record<string, string | number>>): v
 
 function main(): void {
   const config = loadEvaluationConfig(CONFIG_PATH);
+  const marketSymbols = config.marketSymbols ?? MARKET_SYMBOLS;
   const { dbPath, symbols, trainingEnd } = config;
   const features = config.timesfm ? loadTimesfmFeatures(config.timesfm, symbols,
     [trainingForecastRange(config)]) : undefined;
@@ -24,11 +24,11 @@ function main(): void {
   try {
     mkdirSync(OUT_DIR, { recursive: true });
     for (const file of readdirSync(OUT_DIR)) unlinkSync(`${OUT_DIR}/${file}`);
-    const prices = queryPrices(db, [...symbols, ...Object.values(MARKET_SYMBOLS)]);
+    const prices = queryPrices(db, [...symbols, ...Object.values(marketSymbols)]);
     console.log(`training window: <= ${trainingEnd} (from ${dbPath})`);
     let count = 0;
     for (const symbol of symbols) {
-      const rows = (prices[symbol] ?? []).filter((row) => row.date <= trainingEnd);
+      const rows = (prices[symbol] ?? []).filter((row) => row.date <= trainingEnd && (!config.trainingStart || row.date >= config.trainingStart));
       if (rows.length < MIN_TRAINING_ROWS) {
         console.log(`  ${symbol}: SKIP — only ${rows.length} rows (need ${MIN_TRAINING_ROWS})`);
         continue;
@@ -41,8 +41,8 @@ function main(): void {
       count += 1;
       console.log(`  ${symbol}: ${rows.length} rows (${rows[0].date} → ${rows.at(-1)?.date})`);
     }
-    for (const [name, symbol] of Object.entries(MARKET_SYMBOLS)) {
-      const rows = (prices[symbol] ?? []).filter((row) => row.date <= trainingEnd);
+    for (const [name, symbol] of Object.entries(marketSymbols)) {
+      const rows = (prices[symbol] ?? []).filter((row) => row.date <= trainingEnd && (!config.trainingStart || row.date >= config.trainingStart));
       if (rows.length === 0) {
         console.log(`  market-${name}: SKIP — no data for ${symbol}`);
         continue;

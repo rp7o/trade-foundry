@@ -11,6 +11,7 @@ coverage/
 # Working research files are created from tracked templates on install.
 autoresearch.config.json
 .trade-foundry-workspace
+setup.answers.json
 research/trade-long/strategy.ts
 research/trade-long/strategy.md
 research/trade-long/hypothesis.md

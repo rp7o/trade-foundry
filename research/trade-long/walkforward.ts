@@ -28,6 +28,8 @@ export interface ExecutionCosts {
 }
 
 export interface EvaluationConfig {
+  portfolio?: PortfolioSettings;
+  marketSymbols?: Record<string, string>;
   trainingStart?: string;
   evaluationEnd?: string;
   timesfm?: TimesfmConfig;
@@ -39,6 +41,22 @@ export interface EvaluationConfig {
   foldCount: number;
   rollingYears: number;
   executionCosts: ExecutionCosts;
+}
+
+export interface PortfolioSettings {
+  initialCapital: number;
+  maxPositions: number;
+  minAvgTradedValue: number;
+}
+
+export function resolvePortfolioSettings(value: Partial<PortfolioSettings> = {}): PortfolioSettings {
+  const result = { initialCapital: 10_000, maxPositions: 2, minAvgTradedValue: 2_000_000, ...value };
+  if (!Number.isFinite(result.initialCapital) || result.initialCapital <= 0 ||
+      !Number.isInteger(result.maxPositions) || result.maxPositions < 1 ||
+      !Number.isFinite(result.minAvgTradedValue) || result.minAvgTradedValue < 0) {
+    throw new Error("portfolio requires positive initialCapital, positive integer maxPositions and non-negative minAvgTradedValue");
+  }
+  return result;
 }
 
 export const LOOKBACK_DAYS = 90;
@@ -75,10 +93,13 @@ const WINDOWED_STRATEGY_PATH = ".autoresearch/trade-long/windowed-strategy.ts";
 const MARKET_CONTEXT_PATH = ".autoresearch/trade-long/market-context.json";
 
 export function loadEvaluationConfig(configPath = "autoresearch.config.json"): EvaluationConfig {
-  const raw = JSON.parse(readFileSync(configPath, "utf8")) as {
+  return parseEvaluationConfig(JSON.parse(readFileSync(configPath, "utf8")));
+}
+
+export function parseEvaluationConfig(raw: {
     evaluation?: Partial<EvaluationConfig>;
     executionCosts?: Partial<ExecutionCosts>;
-  };
+  }): EvaluationConfig {
   const evaluation = raw.evaluation;
   if (!evaluation) throw new Error("autoresearch.config.json must define evaluation");
   if (evaluation.evaluationEnd !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(evaluation.evaluationEnd)) {
@@ -86,6 +107,12 @@ export function loadEvaluationConfig(configPath = "autoresearch.config.json"): E
   }
   if (evaluation.timesfm) {
     validateTimesfmConfig(evaluation.timesfm);
+  }
+  if (evaluation.marketSymbols !== undefined && (!evaluation.marketSymbols ||
+      Array.isArray(evaluation.marketSymbols) || typeof evaluation.marketSymbols !== "object" ||
+      Object.entries(evaluation.marketSymbols).some(([key, symbol]) =>
+        !["index", "volatility"].includes(key) || typeof symbol !== "string" || !symbol.trim()))) {
+    throw new Error("marketSymbols must map index/volatility to local-market symbols, or be empty");
   }
   if (evaluation.trainingStart !== undefined &&
       (!/^\d{4}-\d{2}-\d{2}$/.test(evaluation.trainingStart) || evaluation.trainingStart > evaluation.trainingEnd!)) {
@@ -132,6 +159,8 @@ export function loadEvaluationConfig(configPath = "autoresearch.config.json"): E
     foldCount: foldCount as number,
     rollingYears: rollingYears as number,
     executionCosts: { brokeragePerSide, slippageBpsPerSide },
+    portfolio: resolvePortfolioSettings(evaluation.portfolio),
+    marketSymbols: evaluation.marketSymbols ?? MARKET_SYMBOLS,
   };
 }
 
@@ -239,10 +268,11 @@ export function loadAllCandles(config: EvaluationConfig): Record<string, Candle[
 // Market-context series keyed by logical name (index/volatility). Missing
 // series are simply omitted so evaluation still works if a symbol has no data.
 export function loadMarketCandles(config: EvaluationConfig): Record<string, Candle[]> {
-  const raw = querySymbols(config.dbPath, Object.values(MARKET_SYMBOLS));
+  const marketSymbols = config.marketSymbols ?? MARKET_SYMBOLS;
+  const raw = querySymbols(config.dbPath, Object.values(marketSymbols));
   const context: Record<string, Candle[]> = {};
-  for (const name of Object.keys(MARKET_SYMBOLS)) {
-    const rows = raw[MARKET_SYMBOLS[name]] ?? [];
+  for (const name of Object.keys(marketSymbols)) {
+    const rows = raw[marketSymbols[name]] ?? [];
     if (rows.length >= LOOKBACK_DAYS) {
       context[name] = adjustCandles(rows);
     }
@@ -393,6 +423,7 @@ function ensureWindowedStrategy(): void {
 
 export interface BacktestFeatures {
   timesfm?: TimesfmForecasts;
+  portfolio?: PortfolioSettings;
 }
 
 export function trainingForecastRange(config: EvaluationConfig): DateRange {
@@ -457,13 +488,14 @@ async function runSharedBacktests(
   costs: ExecutionCosts,
   features: BacktestFeatures = {},
 ): Promise<WindowProfileResult[]> {
+  const portfolio = resolvePortfolioSettings(features.portfolio);
   const payload = {
     timesfm_forecasts: features.timesfm,
     symbols: windowCandles,
-    initial_capital: INITIAL_CAPITAL,
+    initial_capital: portfolio.initialCapital,
     risk_per_trade: RISK_FRACTION,
-    max_positions: MAX_POSITIONS,
-    min_avg_traded_value: MIN_AVG_TRADED_VALUE,
+    max_positions: portfolio.maxPositions,
+    min_avg_traded_value: portfolio.minAvgTradedValue,
     strategy_lookback_days: LOOKBACK_DAYS,
     cache_strategy_proposals: true,
     hurdle_rate: HURDLE_RATE,
@@ -550,12 +582,13 @@ function scoreProfileWindow(
   result: WindowProfileResult,
   range: DateRange,
   windowDates: string[],
+  initialCapital = INITIAL_CAPITAL,
 ): ProfileScore {
   // Warmup days precede the window; score only the in-window equity path.
   const capitalSeries = result.capitalSeries.filter((point) => point.date >= range.start);
   return calculateProfileScore({
     profile,
-    initialCapital: INITIAL_CAPITAL,
+    initialCapital,
     trades: result.trades,
     capitalSeries,
     allDates: windowDates,
@@ -585,7 +618,7 @@ export async function runWindow(
   const profileScores = Object.fromEntries(
     SCORE_PROFILES.map((profile) => [
       profile,
-      scoreProfileWindow(profile, profileResults[profile], range, windowDates),
+      scoreProfileWindow(profile, profileResults[profile], range, windowDates, features.portfolio?.initialCapital),
     ])
   ) as Record<ScoreProfile, ProfileScore>;
 
@@ -627,7 +660,7 @@ export async function runWindows(
     const profileScores = Object.fromEntries(
       SCORE_PROFILES.map((profile) => [
         profile,
-        scoreProfileWindow(profile, profileResults[profile], range, windowDates),
+        scoreProfileWindow(profile, profileResults[profile], range, windowDates, features.portfolio?.initialCapital),
       ])
     ) as Record<ScoreProfile, ProfileScore>;
     return {

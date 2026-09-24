@@ -87,6 +87,72 @@ Install creates local, ignored strategy, hypothesis, ledger, and config files
 from tracked templates only when they are missing. It never overwrites existing
 research. If install scripts were skipped, run `pnpm run init:local`.
 
+### Guided setup
+
+Run `pnpm run setup` after install. Choose the current workspace, the engine's
+local ignored files, or a new private research repo. Review the proposed config
+before saving. The wizard configures one exchange/currency, stock symbols,
+optional same-market index/volatility context, database/source paths, capital,
+position and liquidity limits, execution costs, agent provider/model, timeouts
+and attempt budget. All monetary inputs and prices must use the same currency;
+the evaluator does not perform FX conversion.
+
+New workspaces retain the template's training period and anchored 2019-onward
+annual evaluation. Setup does not tune dates, risk profiles or acceptance gates
+against results. Existing workspaces retain their configured dates. Once a
+workspace has research results, changing scoring assumptions through setup
+requires a new workspace; agent/model and run-budget changes remain allowed.
+
+```sh
+pnpm run setup --dry-run  # answer questions and preview, without writes
+pnpm run setup --check    # validate current config, dependencies and data coverage
+```
+
+Missing market data does not prevent saving a config, but blocks the optional
+baseline. Import adjusted OHLCV prices or supply the configured SQLite source and
+run `pnpm run market:sync-local`, then rerun `setup --check`. Optional baseline
+preparation checks the strategy, exports training data, and seeds a baseline only
+when one does not already exist. A neutral starter's zero score is expected.
+Setup never starts the agent loop. Existing strategy files and run history are
+preserved; config backups are stored in `.autoresearch/setup/`.
+
+TimesFM is an explicit opt-in request, recorded as `setup.timesfmRequested`.
+It stays inactive until `pnpm run research:refresh` generates and validates a
+campaign. Setup downloads no models and runs no inference. An existing enabled
+campaign is preserved unless explicitly disabled in a workspace without results.
+
+For repeatable non-interactive setup, create an ignored `setup.answers.json`:
+
+```json
+{
+  "mode": "new-private",
+  "workspace": "../my-research",
+  "exchange": "ASX",
+  "currency": "AUD",
+  "symbols": ["CBA.AX", "BHP.AX", "WBC.AX"],
+  "initialCapital": 25000,
+  "maxPositions": 2,
+  "minAvgTradedValue": 2000000,
+  "brokeragePerSide": 3,
+  "slippageBpsPerSide": 5,
+  "provider": "pi",
+  "model": "",
+  "maxIterations": 20,
+  "timesfm": false,
+  "baseline": false
+}
+```
+
+```sh
+pnpm run setup --answers setup.answers.json --dry-run
+pnpm run setup --answers setup.answers.json --yes
+```
+
+Only supplied answers change existing values. Use `"mode": "current"` for
+reruns. `--no-select` saves settings without changing the saved workspace
+selection; `TRADE_FOUNDRY_WORKSPACE` still overrides that selection. Setup does
+not create Git commits or configure/push remotes.
+
 The public config template leaves TimesFM disabled. `research:refresh` enables
 its selected campaign only in your ignored `autoresearch.config.json`.
 Because working strategy files are ignored, `--commit-accepted` is unavailable

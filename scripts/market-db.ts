@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -30,7 +30,12 @@ export interface PriceRow {
   volume: number;
 }
 
-export function openMarketDatabase(dbPath = MARKET_DB_PATH): DatabaseSync {
+export function configuredMarketDbPath(): string {
+  if (!existsSync("autoresearch.config.json")) return MARKET_DB_PATH;
+  return JSON.parse(readFileSync("autoresearch.config.json", "utf8")).evaluation?.dbPath ?? MARKET_DB_PATH;
+}
+
+export function openMarketDatabase(dbPath = configuredMarketDbPath()): DatabaseSync {
   mkdirSync(dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA);

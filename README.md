@@ -67,9 +67,16 @@ The CSV must contain `symbol,date,open,high,low,close,adj_close,volume`.
 
 ```bash
 pnpm install
+pnpm run setup               # review workspace, market, costs, capital and agent settings
 pnpm run market:import -- ./path/to/licensed-prices.csv
+pnpm run setup --check       # read-only data/dependency preflight
 pnpm run generate-training    # writes research/trade-long/training-data/*.csv
 ```
+
+The setup wizard preserves existing strategies and results, backs up edited
+config, and can run an initial baseline when data is ready. It keeps evaluation
+dates and stability requirements fixed. See [guided setup](SETUP.md#guided-setup)
+for preview mode and reproducible non-interactive answers.
 
 TimesFM is an optional, local-only forecast feature. It is disabled by
 default. After importing data into the configured `db/market.db`, prepare a

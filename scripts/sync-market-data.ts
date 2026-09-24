@@ -27,8 +27,11 @@ export interface SyncResult {
 }
 
 interface EvaluationConfigFile {
+  data?: { sourcePath?: string };
   evaluation?: {
     symbols?: unknown;
+    dbPath?: string;
+    marketSymbols?: Record<string, string>;
   };
 }
 
@@ -47,7 +50,7 @@ function loadSymbols(configPath = "autoresearch.config.json"): string[] {
   if (!Array.isArray(symbols) || symbols.some((symbol) => typeof symbol !== "string")) {
     throw new Error("autoresearch.config.json evaluation.symbols must be an array of strings");
   }
-  return [...new Set([...symbols, ...MARKET_CONTEXT_SYMBOLS])];
+  return [...new Set([...symbols, ...(config.evaluation?.marketSymbols ? Object.values(config.evaluation.marketSymbols) : MARKET_CONTEXT_SYMBOLS)])];
 }
 
 function validateSourceRow(raw: Record<string, unknown>, sourcePath: string, requestedSymbol: string): PriceRow {
@@ -145,9 +148,11 @@ interface ParsedArgs {
 
 function parseArgs(args: string[]): ParsedArgs {
   if (args[0] === "--") args = args.slice(1);
+  const config: EvaluationConfigFile = existsSync("autoresearch.config.json")
+    ? JSON.parse(readFileSync("autoresearch.config.json", "utf8")) : {};
   const parsed: ParsedArgs = {
-    sourcePath: DEFAULT_SOURCE_PATH,
-    targetPath: MARKET_DB_PATH,
+    sourcePath: config.data?.sourcePath ?? DEFAULT_SOURCE_PATH,
+    targetPath: config.evaluation?.dbPath ?? MARKET_DB_PATH,
     help: false,
   };
   for (let index = 0; index < args.length; index += 1) {

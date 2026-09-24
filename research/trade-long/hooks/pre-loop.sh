@@ -32,7 +32,7 @@ BEST_JSON="${AR_BEST_JSON:-.autoresearch/best.json}"
 RETIREMENT_FLOOR="${AR_RETIREMENT_FLOOR:-}"   # empty = disabled
 
 # Inputs that define the scoring basis. Any change invalidates all cached scores.
-PRICES_DB="db/market.db"
+PRICES_DB="$(pnpm exec tsx scripts/read-config.ts evaluation.dbPath db/market.db)"
 EVAL_TS="research/trade-long/eval.ts"
 WALKFORWARD_TS="research/trade-long/walkforward.ts"
 SIGNAL_SCREEN_TS="research/trade-long/signal-screen.ts"
