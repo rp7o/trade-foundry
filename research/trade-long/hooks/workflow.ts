@@ -701,6 +701,7 @@ async function hypothesisLoop(
     throw new Error("no best score found; run `pnpm run ar -- baseline` first");
   }
   await reconcileChampion(cwd, config, globalBest, commitAccepted);
+  let globalBestQualified = await isQualifiedChampion(cwd, globalBest.artifactFile);
 
   const numSlots = tradeLong.numSlots;
   const blockSize = tradeLong.maturationBlockSize;
@@ -766,7 +767,8 @@ async function hypothesisLoop(
           await writeHypothesisBest(cwd, hypothesisId, hypothesisBest);
           await recordHypothesisAttempt(cwd, hypothesisId, true);
           await preserveAcceptedArtifact(cwd, run.timestamp, config.accepted.preserve);
-          let promoted = isImprovement(run.score, globalBest.score, 0);
+          let promoted = run.score > 0 &&
+            (!globalBestQualified || isImprovement(run.score, globalBest.score, 0));
           if (promoted) {
             promoted = await passesPromotionGates(cwd, run.artifactFile);
           }
@@ -778,6 +780,7 @@ async function hypothesisLoop(
             await writeBest(cwd, hypothesisBest);
             promotionHypothesisIds = await promoteChampion(cwd, hypothesisId);
             Object.assign(globalBest, hypothesisBest);
+            globalBestQualified = true;
           }
           if (commitAccepted) {
             await commitAcceptedHypothesis(
@@ -936,7 +939,7 @@ function leastCorrelatedPartner(
 
 interface ArtifactWithTrades {
   trades?: Array<{ fold?: unknown; profit?: unknown }>;
-  diagnostics?: { folds?: Array<{ name?: unknown }> };
+  diagnostics?: { folds?: Array<{ name?: unknown; start?: unknown; end?: unknown }> };
 }
 
 function significanceTrades(artifact: ArtifactWithTrades): Array<{ fold: string; profit: number }> {
@@ -960,6 +963,12 @@ async function runSignificanceGate(
   }
 
   const candidate = candidateArtifact as ArtifactWithTrades;
+  const candidateRanges = candidate.diagnostics?.folds?.map(({ start, end }) => `${start}:${end}`);
+  const incumbentRanges = incumbent.diagnostics?.folds?.map(({ start, end }) => `${start}:${end}`);
+  if (!candidateRanges || !incumbentRanges ||
+      JSON.stringify(candidateRanges) !== JSON.stringify(incumbentRanges)) {
+    return { passed: true, reason: "different evaluation periods; trade bootstrap waived" };
+  }
   const candidateTrades = significanceTrades(candidate);
   const incumbentTrades = significanceTrades(incumbent);
   if (candidateTrades.length === 0) {
@@ -975,11 +984,8 @@ async function runSignificanceGate(
   return { passed: result.passed, reason: result.reason };
 }
 
-// Fold-robustness promotion gate. The score itself is the honest median fold
-// score (so lineages can climb through negative territory), which means a
-// candidate can beat the global best while still failing promotion robustness.
-// A candidate must clear the evaluator's positive-fold-return and
-// maximum-drawdown gates before becoming the root champion.
+// The score is full-period portfolio profit. A candidate can improve it while
+// still failing period breadth, drawdown, or sample-adequacy promotion gates.
 async function passesPromotionGates(cwd: string, artifactFile?: string): Promise<boolean> {
   if (!artifactFile) {
     console.log("promotion gate: no candidate artifact; promotion denied");
@@ -1004,6 +1010,19 @@ async function passesPromotionGates(cwd: string, artifactFile?: string): Promise
     .map(([name]) => name);
   console.log(`promotion gate: blocked (${blocked.join(",") || "not promotable"}); promotion denied`);
   return false;
+}
+
+async function isQualifiedChampion(cwd: string, artifactFile?: string): Promise<boolean> {
+  if (!artifactFile) return true;
+  try {
+    const artifact = JSON.parse(await readFile(path.join(cwd, artifactFile), "utf8")) as {
+      summary?: { promotable?: unknown };
+    };
+    return artifact.summary?.promotable === true &&
+      await falsificationVerdict(cwd, artifactFile) !== "killed";
+  } catch {
+    return false;
+  }
 }
 
 // Falsification verdict for a scored artifact. A "killed" verdict (thin sample
@@ -1041,6 +1060,15 @@ async function survivesFalsification(cwd: string, artifactFile?: string): Promis
 async function reconcileChampion(cwd: string, config: Config, globalBest: BestResult, commitAccepted: boolean): Promise<void> {
   if (await falsificationVerdict(cwd, globalBest.artifactFile) !== "killed") return;
 
+  const championArtifact = JSON.parse(
+    await readFile(path.join(cwd, globalBest.artifactFile!), "utf8")
+  ) as { diagnostics?: { evaluation?: { scoringModel?: unknown };
+    folds?: Array<{ start?: unknown; end?: unknown }> } };
+  const championBasis = JSON.stringify({
+    scoringModel: championArtifact.diagnostics?.evaluation?.scoringModel,
+    ranges: championArtifact.diagnostics?.folds?.map(({ start, end }) => [start, end]),
+  });
+
   console.log("reconcile: standing champion is KILLED by an offline attack; searching for a survivor");
   const qualifiedRoot = path.join(cwd, ".autoresearch", "qualified");
   let entries: string[];
@@ -1058,7 +1086,14 @@ async function reconcileChampion(cwd: string, config: Config, globalBest: BestRe
     try {
       const artifact = JSON.parse(
         await readFile(path.join(qualifiedRoot, entry, "evaluation.json"), "utf8")
-      ) as EvaluationArtifact & { primary?: { value?: unknown } };
+      ) as EvaluationArtifact & { primary?: { value?: unknown };
+        diagnostics?: { evaluation?: { scoringModel?: unknown };
+          folds?: Array<{ name?: unknown; start?: unknown; end?: unknown }> } };
+      const basis = JSON.stringify({
+        scoringModel: artifact.diagnostics?.evaluation?.scoringModel,
+        ranges: artifact.diagnostics?.folds?.map(({ start, end }) => [start, end]),
+      });
+      if (basis !== championBasis) continue;
       const score = Number((artifact.primary as { value?: unknown } | undefined)?.value);
       candidates.push({
         entry,

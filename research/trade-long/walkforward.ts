@@ -20,7 +20,7 @@ export { MIN_TOTAL_TRADES };
 
 // ─── Evaluation configuration ────────────────────────────────────────────────
 // Window shape and execution costs live in autoresearch.config.json. The
-// scoring window itself is anchored to the latest loaded market date.
+// evaluation starts at foldStart and extends to the latest loaded market date.
 
 export interface ExecutionCosts {
   brokeragePerSide: number;
@@ -51,7 +51,7 @@ export const INITIAL_CAPITAL = 10_000;
 export const RISK_FRACTION = 0.02;
 export const MAX_POSITIONS = 2;
 export const HURDLE_RATE = 5.0;
-export const MIN_POSITIVE_FOLD_RATE = 0.4;
+export const MIN_POSITIVE_FOLD_RATE = 0.6;
 export const MAX_FOLD_DRAWDOWN_PCT = 30;
 // Liquidity floor passed to the shared engine (A$ average daily traded value).
 export const MIN_AVG_TRADED_VALUE = 2_000_000;
@@ -159,25 +159,24 @@ function previousDay(date: string): string {
 
 export function foldRanges(config: EvaluationConfig, latestDate?: string): DateRange[] {
   if (config.evaluationEnd) {
-    const ranges = foldRanges({ ...config, evaluationEnd: undefined });
-    if (ranges.at(-1)?.end !== config.evaluationEnd || config.trainingEnd >= ranges[0].start) {
+    const ranges = foldRanges({ ...config, evaluationEnd: undefined }, config.evaluationEnd);
+    if (ranges.length !== config.foldCount || ranges.at(-1)?.end !== config.evaluationEnd ||
+        config.trainingEnd >= ranges[0].start) {
       throw new Error("Fixed evaluation folds must follow training and end exactly at evaluationEnd");
     }
     return ranges;
   }
   if (latestDate) {
-    const totalMonths = config.rollingYears * 12;
-    if (totalMonths % config.foldMonths !== 0 || config.foldCount !== totalMonths / config.foldMonths) {
-      throw new Error("rollingYears, foldMonths, and foldCount must describe the full rolling window");
+    if (config.trainingEnd >= config.foldStart || latestDate < config.foldStart) {
+      throw new Error("Evaluation folds must follow training and start no later than the latest data");
     }
-    const rollingStart = addMonths(latestDate, -totalMonths);
-    return Array.from({ length: config.foldCount }, (_, i) => {
-      const start = addMonths(rollingStart, i * config.foldMonths);
-      const end = i === config.foldCount - 1
-        ? latestDate
-        : previousDay(addMonths(start, config.foldMonths));
-      return { name: `fold-${i + 1}`, start, end };
-    });
+    const ranges: DateRange[] = [];
+    for (let start = config.foldStart; start <= latestDate; start = addMonths(start, config.foldMonths)) {
+      const nextStart = addMonths(start, config.foldMonths);
+      ranges.push({ name: `fold-${ranges.length + 1}`, start,
+        end: nextStart <= latestDate ? previousDay(nextStart) : latestDate });
+    }
+    return ranges;
   }
 
   const folds: DateRange[] = [];
@@ -452,12 +451,12 @@ function sliceWindow(
   return sliced;
 }
 
-async function runSharedBacktest(
+async function runSharedBacktests(
   windowCandles: Record<string, Candle[]>,
-  profile: ScoreProfile,
+  profiles: ScoreProfile[],
   costs: ExecutionCosts,
   features: BacktestFeatures = {},
-): Promise<WindowProfileResult> {
+): Promise<WindowProfileResult[]> {
   const payload = {
     timesfm_forecasts: features.timesfm,
     symbols: windowCandles,
@@ -465,7 +464,8 @@ async function runSharedBacktest(
     risk_per_trade: RISK_FRACTION,
     max_positions: MAX_POSITIONS,
     min_avg_traded_value: MIN_AVG_TRADED_VALUE,
-    optimization_profile: profile,
+    strategy_lookback_days: LOOKBACK_DAYS,
+    cache_strategy_proposals: true,
     hurdle_rate: HURDLE_RATE,
     execution_costs: {
       brokerage_per_side: costs.brokeragePerSide,
@@ -473,11 +473,16 @@ async function runSharedBacktest(
     },
   };
 
-  const result = await runPortfolioBacktestInWorker(payload, {
+  const results = await runPortfolioBacktestInWorker(payload, {
     engineRoot: ".",
     side: "long",
     strategyPath: WINDOWED_STRATEGY_PATH,
+    profiles,
   });
+  return results.map((result) => normalizeBacktestResult(result));
+}
+
+function normalizeBacktestResult(result: import("../engine/index.mjs").PortfolioBacktestResult): WindowProfileResult {
   if (result.schemaVersion !== SHARED_SCHEMA_VERSION) {
     throw new Error(
       `shared portfolio runner returned schema ${String(result.schemaVersion)}; expected ${SHARED_SCHEMA_VERSION}`
@@ -572,11 +577,7 @@ export async function runWindow(
   }
   const windowDates = windowDatesFor(windowCandles, range);
 
-  const results = await mapLimit(
-    SCORE_PROFILES,
-    SCORE_PROFILES.length,
-    (profile) => runSharedBacktest(windowCandles, profile, costs, features),
-  );
+  const results = await runSharedBacktests(windowCandles, SCORE_PROFILES, costs, features);
   const profileResults = Object.fromEntries(
     SCORE_PROFILES.map((profile, i) => [profile, results[i]])
   ) as Record<ScoreProfile, WindowProfileResult>;
@@ -604,25 +605,24 @@ export async function runWindows(
   features: BacktestFeatures = {},
 ): Promise<WindowResult[]> {
   ensureWindowedStrategy();
-  // Flatten fold × profile so the limiter sees every engine invocation.
-  const tasks = ranges.flatMap((range) => {
+  const tasks = ranges.map((range) => {
     const windowCandles = sliceWindow(allCandles, range);
     if (Object.keys(windowCandles).length === 0) {
       throw new Error(`no symbol data inside window ${range.name} (${range.start}..${range.end})`);
     }
-    return SCORE_PROFILES.map((profile) => ({ range, windowCandles, profile }));
+    return { range, windowCandles };
   });
   const results = await mapLimit(
     tasks,
     ENGINE_CONCURRENCY,
-    (task) => runSharedBacktest(task.windowCandles, task.profile, costs, features),
+    (task) => runSharedBacktests(task.windowCandles, SCORE_PROFILES, costs, features),
   );
 
   return ranges.map((range, r) => {
     const windowCandles = sliceWindow(allCandles, range);
     const windowDates = windowDatesFor(windowCandles, range);
     const profileResults = Object.fromEntries(
-      SCORE_PROFILES.map((profile, p) => [profile, results[r * SCORE_PROFILES.length + p]])
+      SCORE_PROFILES.map((profile, p) => [profile, results[r][p]])
     ) as Record<ScoreProfile, WindowProfileResult>;
     const profileScores = Object.fromEntries(
       SCORE_PROFILES.map((profile) => [
@@ -653,10 +653,10 @@ export async function runModerateFoldScores(
   const results = await mapLimit(
     tasks,
     ENGINE_CONCURRENCY,
-    (task) => runSharedBacktest(task.windowCandles, "moderate", costs, features),
+    (task) => runSharedBacktests(task.windowCandles, ["moderate"], costs, features),
   );
   return tasks.map((task, i) =>
-    scoreProfileWindow("moderate", results[i], task.range, windowDatesFor(task.windowCandles, task.range)).score
+    scoreProfileWindow("moderate", results[i][0], task.range, windowDatesFor(task.windowCandles, task.range)).score
   );
 }
 
@@ -692,7 +692,7 @@ export function assessPositiveFoldReturnGate(foldReturns: number[]): PositiveFol
 
 // A promotable verdict needs enough trades to mean something: below the
 // evidence floor the fold statistics are dominated by single trades, and an
-// empty fold contributes a zero the positive-fold-rate gate counts as data.
+// An inactive year may be a prudent choice for a long-only strategy.
 // Threshold shared with the falsification audit (see falsification.ts).
 export interface SampleAdequacyGate {
   passed: boolean;
@@ -705,7 +705,9 @@ export function assessSampleAdequacyGate(foldTradeCounts: number[]): SampleAdequ
   const totalTrades = foldTradeCounts.reduce((sum, count) => sum + count, 0);
   const emptyFolds = foldTradeCounts.filter((count) => count === 0).length;
   return {
-    passed: totalTrades >= MIN_TOTAL_TRADES && emptyFolds === 0 && foldTradeCounts.length > 0,
+    passed: totalTrades >= MIN_TOTAL_TRADES &&
+      foldTradeCounts.length > 0 &&
+      foldTradeCounts.length - emptyFolds >= Math.ceil(foldTradeCounts.length / 2),
     totalTrades,
     minTotalTrades: MIN_TOTAL_TRADES,
     emptyFolds,

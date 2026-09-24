@@ -83,10 +83,8 @@ export function calculateProfileScore(input: ProfileScoreInput): ProfileScore {
     if (point.capital > peakCapital) peakCapital = point.capital;
     const drawdown = peakCapital - point.capital;
     const drawdownPct = peakCapital > 0 ? (drawdown / peakCapital) * 100 : 0;
-    if (drawdown > maxDrawdown) {
-      maxDrawdown = drawdown;
-      maxDrawdownPct = drawdownPct;
-    }
+    maxDrawdown = Math.max(maxDrawdown, drawdown);
+    maxDrawdownPct = Math.max(maxDrawdownPct, drawdownPct);
   }
 
   let timeFactor = 1;

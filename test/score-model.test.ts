@@ -92,3 +92,18 @@ test("a losing window scores its honest negative return", () => {
   assert.equal(score.score, -80);
   assert.deepEqual(score.scoreGateFailures, []);
 });
+
+test("drawdown gate uses the largest percentage drawdown on the path", () => {
+  const score = calculateProfileScore({
+    profile: "moderate", initialCapital: 10_000, trades: [],
+    capitalSeries: [
+      { date: "2020-01-01", capital: 10_000 },
+      { date: "2020-01-02", capital: 8_000 },
+      { date: "2020-01-03", capital: 20_000 },
+      { date: "2020-01-04", capital: 17_000 },
+    ],
+    allDates: ["2020-01-01", "2020-01-02", "2020-01-03", "2020-01-04"],
+  });
+  assert.equal(score.maxDrawdown, 3_000);
+  assert.equal(score.maxDrawdownPct, 20);
+});

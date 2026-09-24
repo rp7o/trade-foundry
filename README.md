@@ -130,16 +130,16 @@ tool output are omitted.
 
 ## Scoring and acceptance
 
-The evaluator prints `score: <walkForwardScore>`. Candidates are scored on the
-latest rolling three years of walk-forward folds (defined in
-`autoresearch.config.json` under `evaluation`). Each fold is scored across
-conservative, moderate, and aggressive portfolio profiles using 2/3/1
-weighting, and the emitted score is the median overall-return score.
+The evaluator prints `score: <walkForwardScore>`. The default evaluation runs
+from 2019 through the latest available data in anchored annual periods. The
+score is net profit from one continuous, cost-aware portfolio backtest, with
+conservative, moderate, and aggressive profiles weighted 2/3/1. Independent
+annual backtests are diagnostics rather than additive returns.
 
-Promotion separately requires positive overall returns in at least 40% of folds
-and drawdown no higher than 30%. Alpha, random-entry comparisons, trade-count
-floors, signal-screen checks, and holdout checks do not participate in the
-score.
+Promotion separately requires positive moderate-profile equity growth in at
+least 60% of annual periods, positive full-period return, drawdown no higher
+than 30% for each period and the full run, adequate trade participation, and
+survival of falsification checks. These gates do not alter the score.
 
 `pnpm run ar -- status` also reports campaign-level Probability of Backtest
 Overfitting (PBO) on the largest cohort with an identical fold schema.

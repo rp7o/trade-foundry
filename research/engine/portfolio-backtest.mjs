@@ -44,6 +44,9 @@ export async function runPortfolioBacktest(context, options = {}) {
   const maxHoldDaysOverride = context.max_hold_days == null ? null : Number(context.max_hold_days);
   const maxPositions = Number(context.max_positions || 2);
   const minAvgTradedValue = Number(context.min_avg_traded_value || 0);
+  // The walk-forward wrapper only exposes this many bars to the strategy.
+  const strategyLookbackDays = Number(context.strategy_lookback_days) || 0;
+  const proposalCache = context.cache_strategy_proposals ? new Map() : null;
   const optimizationProfile = String(context.optimization_profile || "conservative");
   const hurdleRate = Number(context.hurdle_rate || 5.0);
   const executionCosts = context.execution_costs || {};
@@ -135,12 +138,20 @@ export async function runPortfolioBacktest(context, options = {}) {
     if (proposal.target === null || proposal.target === undefined) return 0;
     return (proposal.target - entry) / risk;
   }
-  function ensembleLongProposal(historySlice, market) {
+  function callStrategy(fn, path, symbol, todayIndex, historySlice, market) {
+    const key = `${path}\0${symbol}\0${todayIndex}`;
+    if (proposalCache?.has(key)) return proposalCache.get(key);
+    const proposal = fn(historySlice.map((c) => ({ ...c })), market);
+    proposalCache?.set(key, proposal);
+    return proposal;
+  }
+
+  function ensembleLongProposal(historySlice, market, symbol, todayIndex) {
     const fired = [];
     for (const fn of strategyFns) {
       let proposal;
       try {
-        proposal = fn.proposeTrade(historySlice.map((c) => ({ ...c })), market);
+        proposal = callStrategy(fn.proposeTrade, fn.path, symbol, todayIndex, historySlice, market);
       } catch (err) {
         proposal = null;
       }
@@ -244,19 +255,33 @@ export async function runPortfolioBacktest(context, options = {}) {
     // Data transport only: the strategy owns any use of forecasts in proposals.
     const timesfm = timesfmAsOf(context.timesfm_forecasts, symbol, symbolData[symbol][count - 1]?.date);
     if (!aligned && !timesfm) return undefined;
-    return { ...(aligned ? { index: aligned.slice(0, count) } : {}), ...(timesfm ? { timesfm } : {}) };
+    return { ...(aligned ? { index: aligned.slice(strategyLookbackDays > 0 ? Math.max(0, count - strategyLookbackDays) : 0, count) } : {}), ...(timesfm ? { timesfm } : {}) };
   };
 
   const allDates = [...allDatesSet].sort();
 
   // Build per-symbol date -> candle lookup
   const symbolLookup = {};
+  const symbolDateIndex = {};
+  const avgTradedValues = {};
   for (const [symbol, candles] of Object.entries(symbolData)) {
     const lookup = new Map();
-    for (const c of candles) {
+    const dateIndex = new Map();
+    const tradedValues = new Array(candles.length);
+    for (let i = 0; i < candles.length; i++) {
+      const c = candles[i];
       lookup.set(c.date, c);
+      // findIndex previously selected the first duplicate date.
+      if (!dateIndex.has(c.date)) dateIndex.set(c.date, i);
+      let sum = 0;
+      for (let j = Math.max(0, i - 9); j <= i; j++) {
+        sum += candles[j].close * candles[j].volume;
+      }
+      tradedValues[i] = sum / Math.min(10, i + 1);
     }
     symbolLookup[symbol] = lookup;
+    symbolDateIndex[symbol] = dateIndex;
+    avgTradedValues[symbol] = tradedValues;
   }
 
   function calculateSortinoRatio(capitalSeries, annualHurdleRate = 5.0) {
@@ -488,8 +513,8 @@ export async function runPortfolioBacktest(context, options = {}) {
 
         const pos = activePositions[symbol];
         const candles = symbolData[symbol];
-        const todayIdx = candles.findIndex((c) => c.date === date);
-        if (todayIdx < 0) continue;
+        const todayIdx = symbolDateIndex[symbol].get(date);
+        if (todayIdx === undefined) continue;
 
         pos.daysOpen = (pos.daysOpen || 0) + 1;
 
@@ -531,14 +556,14 @@ export async function runPortfolioBacktest(context, options = {}) {
           continue;
         }
 
-        const historySlice = candles.slice(0, todayIdx + 1);
-        if (historySlice.length < 90) continue;
+        if (todayIdx + 1 < 90) continue;
+        const historySlice = candles.slice(strategyLookbackDays > 0 ? Math.max(0, todayIdx + 1 - strategyLookbackDays) : 0, todayIdx + 1);
 
         // Re-evaluate with the strategy that opened this position, not whichever
         // strategy happens to be first in the set. Mirrors the live trail
         // routing in agents/strategy_adapter.originating_strategy().
         const originator = strategyByPath.get(pos.strategy) || proposeTrade;
-        const proposal = originator(historySlice.map((c) => ({ ...c })), marketSlice(symbol, todayIdx + 1));
+        const proposal = callStrategy(originator, pos.strategy || strategyRelPaths[0], symbol, todayIdx, historySlice, marketSlice(symbol, todayIdx + 1));
         if (proposal) {
           if (proposal.side === "short") {
             pos.exitNextDayOpen = true;
@@ -600,24 +625,17 @@ export async function runPortfolioBacktest(context, options = {}) {
         const candle = symbolLookup[symbol].get(date);
         if (!candle) continue;
 
-        const todayIndex = candles.findIndex((c) => c.date === date);
-        if (todayIndex < 0) continue;
+        const todayIndex = symbolDateIndex[symbol].get(date);
+        if (todayIndex === undefined) continue;
         if (todayIndex < 89) continue;
 
         // 10-day avg traded value
-        const atvStart = Math.max(0, todayIndex - 9);
-        let atvSum = 0;
-        let atvCount = 0;
-        for (let i = atvStart; i <= todayIndex; i++) {
-          atvSum += candles[i].close * candles[i].volume;
-          atvCount++;
-        }
-        const avgTradedValue = atvCount > 0 ? atvSum / atvCount : 0;
+        const avgTradedValue = avgTradedValues[symbol][todayIndex];
 
         if (minAvgTradedValue > 0 && avgTradedValue < minAvgTradedValue) continue;
 
-        const historySlice = candles.slice(0, todayIndex + 1);
-        const graded = ensembleLongProposal(historySlice, marketSlice(symbol, todayIndex + 1));
+        const historySlice = candles.slice(strategyLookbackDays > 0 ? Math.max(0, todayIndex + 1 - strategyLookbackDays) : 0, todayIndex + 1);
+        const graded = ensembleLongProposal(historySlice, marketSlice(symbol, todayIndex + 1), symbol, todayIndex);
         if (graded === null) continue;
         const proposal = graded.proposal;
 
@@ -788,12 +806,14 @@ export async function runPortfolioBacktest(context, options = {}) {
     return risk > 0 ? t.pnl / (t.qty * risk) : 0;
   }
 
-  const baselineResult = runSimulationPass(0.01);
-  const masterRMultiples = baselineResult.trades.map(tradeRMultiple);
-
-  // STEP 2: Run simulations and gather performance scores + Monte Carlo sequences
-  const riskPasses = [];
-  for (const r of finalCandidates) {
+  // Profile choice only reads these results. A grouped worker calculates the
+  // same risk sweep once and reuses it for all three profile decisions.
+  let riskPasses = options.sharedRiskPasses?.value;
+  if (!riskPasses) {
+    const baselineResult = runSimulationPass(0.01);
+    const masterRMultiples = baselineResult.trades.map(tradeRMultiple);
+    riskPasses = [];
+    for (const r of finalCandidates) {
     const result = runSimulationPass(r);
 
     // Use the master R-multipliers pool to ensure strictly monotonic risk estimation
@@ -865,6 +885,8 @@ export async function runPortfolioBacktest(context, options = {}) {
       result: result,
       paths: paths
     });
+    }
+    if (options.sharedRiskPasses) options.sharedRiskPasses.value = riskPasses;
   }
 
   // STEP 3: Select optimal risk rate per profile.

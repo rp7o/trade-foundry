@@ -58,10 +58,10 @@
       "BSL.AX"
     ],
     "trainingEnd": "2017-12-31",
-    "foldStart": "2018-01-01",
-    "foldMonths": 6,
-    "foldCount": 6,
-    "rollingYears": 3
+    "foldStart": "2019-01-01",
+    "foldMonths": 12,
+    "foldCount": 8,
+    "rollingYears": 8
   },
   "acceptance": {
     "minDeltaPct": 0.01

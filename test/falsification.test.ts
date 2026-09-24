@@ -37,7 +37,7 @@ test("sample adequacy kills the hypothesis-0004 fixture", () => {
   assert.equal(audit.verdict, "killed");
   assert.equal(audit.metrics.totalTrades, 7);
   assert.equal(audit.metrics.emptyFolds, 1);
-  assert.equal(audit.reasons.length, 2);
+  assert.equal(audit.reasons.length, 1);
 });
 
 test("sample adequacy passes a healthy entry", () => {
@@ -56,13 +56,18 @@ test("sample adequacy boundary: one below the floor is killed", () => {
   assert.equal(audit.verdict, "killed");
 });
 
-test("sample adequacy kills on an empty fold even with many trades", () => {
+test("sample adequacy allows one inactive period with many trades", () => {
   const trades = spread(60, 10).map((trade) =>
     trade.fold === "fold-6" ? { ...trade, fold: "fold-1" } : trade
   );
   const audit = auditSampleAdequacy(trades, FOLDS);
-  assert.equal(audit.verdict, "killed");
+  assert.equal(audit.verdict, "survived");
   assert.equal(audit.metrics.emptyFolds, 1);
+});
+
+test("sample adequacy rejects activity confined to fewer than half the periods", () => {
+  const trades = spread(60, 10).map((trade) => ({ ...trade, fold: "fold-1" }));
+  assert.equal(auditSampleAdequacy(trades, FOLDS).verdict, "killed");
 });
 
 test("concentration kills when the best trade carries the entire profit", () => {
@@ -96,6 +101,30 @@ test("concentration weakens when one symbol carries the total", () => {
   const audit = auditConcentration(trades);
   assert.equal(audit.verdict, "weakened");
   assert.ok(audit.metrics.profitWithoutBestSymbol <= 0);
+});
+
+test("concentration kills profit dependent on a single period", () => {
+  const trades: AuditTrade[] = [
+    ...spread(36, -1),
+    ...Array.from({ length: 6 }, () => ({ fold: "fold-1", symbol: "CBA.AX", profit: 10 })),
+  ];
+  const audit = auditConcentration(trades);
+  assert.equal(audit.verdict, "killed");
+  assert.ok(audit.metrics.profitWithoutBestFold <= 0);
+});
+
+test("artifact period concentration uses portfolio equity including open positions", () => {
+  const trades = spread(36, 10);
+  const artifact = {
+    trades,
+    diagnostics: {
+      folds: FOLDS.map((name) => ({ name })),
+      periodProfits: FOLDS.map((name, index) => ({ name, profit: index === 0 ? 500 : -50 })),
+    },
+  };
+  const audit = auditArtifact("candidate", artifact, "2026-01-01T00:00:00Z");
+  assert.equal(audit.verdict, "killed");
+  assert.equal(audit.audits[1].metrics.profitWithoutBestFold, -250);
 });
 
 test("concentration survives an evenly spread profitable book", () => {

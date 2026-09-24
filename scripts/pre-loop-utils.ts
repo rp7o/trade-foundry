@@ -30,11 +30,12 @@ function scoringHash(configPath: string, paths: string[]): void {
   console.log(hash.digest("hex"));
 }
 
-function writeScore(path: string, score: string): void {
+function writeScore(path: string, score: string, artifactFile?: string): void {
   let data: Record<string, unknown> = {};
   try { data = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>; } catch { /* create it */ }
   data.score = Number(score);
   data.rescoredAt = new Date().toISOString();
+  if (artifactFile) data.artifactFile = artifactFile;
   writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
 }
 
@@ -73,7 +74,7 @@ function readStatus(path: string): void {
 
 const [command, ...args] = process.argv.slice(2);
 if (command === "hash") scoringHash(args[0], args.slice(1));
-else if (command === "write-score") writeScore(args[0], args[1]);
+else if (command === "write-score") writeScore(args[0], args[1], args[2]);
 else if (command === "reset-state") resetState();
 else if (command === "read-status") readStatus(args[0]);
 else throw new Error("usage: pre-loop-utils.ts {hash|write-score|reset-state} ...");

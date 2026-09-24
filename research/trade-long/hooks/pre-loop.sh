@@ -72,6 +72,7 @@ echo "pre-loop: scoring basis changed (data and/or evaluator) - re-scoring champ
 score_strategy() {
   local strat_ts="$1"
   local strat_md="${2:-}"
+  local best_json="$3"
 
   cp -f "$strat_ts" "$STRATEGY_TS"
   [[ -n "$strat_md" && -f "$strat_md" ]] && cp -f "$strat_md" "$STRATEGY_MD"
@@ -81,6 +82,7 @@ score_strategy() {
     echo "pre-loop: evaluator failed while re-scoring $strat_ts" >&2
     return 1
   }
+  cp -f .autoresearch/trade-long/latest.json "${best_json%.json}.artifact.json"
   # Last `score:` line wins.
   echo "$out" | sed -n 's/^score:[[:space:]]*\(-\{0,1\}[0-9][0-9.]*\).*/\1/p' | tail -n1
 }
@@ -88,7 +90,7 @@ score_strategy() {
 # Overwrite the "score" field of a best.json in place.
 write_score() {
   local best_json="$1" score="$2"
-  pnpm exec tsx scripts/pre-loop-utils.ts write-score "$best_json" "$score"
+  pnpm exec tsx scripts/pre-loop-utils.ts write-score "$best_json" "$score" "${best_json%.json}.artifact.json"
 }
 
 # Snapshot the root strategy while evaluating the champion.
@@ -105,7 +107,7 @@ trap restore_root EXIT
 best_overall=""
 if [[ -f "$STRATEGY_TS" ]]; then
   echo "pre-loop: re-scoring global champion"
-  if s="$(score_strategy "$RESTORE_TS" "$RESTORE_MD")" && [[ -n "$s" ]]; then
+  if s="$(score_strategy "$RESTORE_TS" "$RESTORE_MD" "$BEST_JSON")" && [[ -n "$s" ]]; then
     write_score "$BEST_JSON" "$s"
     best_overall="$s"
     echo "pre-loop:   -> $s"
@@ -133,7 +135,7 @@ if [[ -d "$HYPOTHESES_DIR" ]]; then
       continue
     fi
     echo "pre-loop: re-scoring $hyp_id ($status)"
-    if s="$(score_strategy "$hyp_dir/strategy.ts" "$hyp_dir/strategy.md")" && [[ -n "$s" ]]; then
+    if s="$(score_strategy "$hyp_dir/strategy.ts" "$hyp_dir/strategy.md" "$hyp_best")" && [[ -n "$s" ]]; then
       write_score "$hyp_best" "$s"
       echo "pre-loop:   -> $s"
       if [[ -z "$best_lineage" ]] || awk "BEGIN{exit !($s > $best_lineage)}"; then

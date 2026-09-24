@@ -20,6 +20,10 @@ export interface PortfolioBacktestContext {
   max_hold_days?: number | null;
   max_positions?: number;
   min_avg_traded_value?: number;
+  /** Limit proposal input to the strategy's declared history window. */
+  strategy_lookback_days?: number;
+  /** Reuse deterministic strategy proposals within a risk sweep. */
+  cache_strategy_proposals?: boolean;
   optimization_profile?: string;
   hurdle_rate?: number;
   execution_costs?: {
@@ -38,6 +42,8 @@ export interface PortfolioBacktestOptions {
   side?: string;
   /** Strategy path relative to engineRoot. */
   strategyPath?: string;
+  /** Evaluate these profiles in one worker, sharing the risk sweep. */
+  profiles?: string[];
 }
 
 export interface PortfolioBacktestTrade {
@@ -87,6 +93,10 @@ export declare function runPortfolioBacktest(
  * Run a portfolio backtest on a worker thread. Backtests are CPU-bound, so
  * callers should cap how many run concurrently.
  */
+export declare function runPortfolioBacktestInWorker(
+  context: PortfolioBacktestContext,
+  options: PortfolioBacktestOptions & { profiles: string[] },
+): Promise<PortfolioBacktestResult[]>;
 export declare function runPortfolioBacktestInWorker(
   context: PortfolioBacktestContext,
   options?: PortfolioBacktestOptions,

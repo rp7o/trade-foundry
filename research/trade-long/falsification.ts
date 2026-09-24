@@ -33,8 +33,8 @@ export interface EntryAudit {
 // ─── Attack 1: sample adequacy ───────────────────────────────────────────────
 // A promotable flag earned on a handful of trades is not evidence. Thresholds:
 // below MIN_TOTAL_TRADES the fold statistics the promotion gates rely on are
-// dominated by single trades, and a fold with no trades at all contributes a
-// zero that the positive-fold-rate gate silently counts as data.
+// dominated by single trades. A long-only strategy may rationally remain
+// inactive in weak years, but it must trade in at least half the periods.
 
 export const MIN_TOTAL_TRADES = 30;
 
@@ -52,8 +52,8 @@ export function auditSampleAdequacy(trades: AuditTrade[], folds: string[]): Audi
   if (trades.length < MIN_TOTAL_TRADES) {
     reasons.push(`${trades.length} trades is below the ${MIN_TOTAL_TRADES}-trade evidence floor`);
   }
-  if (emptyFolds.length > 0) {
-    reasons.push(`${emptyFolds.length} fold(s) contain no trades: ${emptyFolds.join(", ")}`);
+  if (folds.length === 0 || folds.length - emptyFolds.length < Math.ceil(folds.length / 2)) {
+    reasons.push(`trades occur in fewer than half of ${folds.length} periods`);
   }
 
   return {
@@ -73,22 +73,22 @@ export function auditSampleAdequacy(trades: AuditTrade[], folds: string[]): Audi
 // ─── Attack 2: concentration and luck ────────────────────────────────────────
 // Drop the single best trade, the best fold, and the best symbol, and see what
 // remains. An edge that evaporates when one trade is removed is one trade.
-// Killed when removing the best trade leaves nothing; weakened when the best
-// trade carries more than MAX_SINGLE_TRADE_SHARE of total profit or when
-// removing the best fold or best symbol flips the total negative.
+// Killed when the best trade or best period alone supplies all profit. A
+// strategy that depends on one calendar year is not stable across periods.
+// Symbol concentration remains a weaker warning.
 
 export const MAX_SINGLE_TRADE_SHARE = 0.5;
 
-export function auditConcentration(trades: AuditTrade[]): AuditRecord {
+export function auditConcentration(trades: AuditTrade[], periodProfits?: number[]): AuditRecord {
   const total = sum(trades.map((trade) => trade.profit));
   const bestTrade = trades.length > 0 ? Math.max(...trades.map((trade) => trade.profit)) : 0;
   const withoutBestTrade = total - bestTrade;
 
   const byFold = groupProfit(trades, (trade) => trade.fold);
   const bySymbol = groupProfit(trades, (trade) => trade.symbol);
-  const bestFoldProfit = maxValue(byFold);
+  const bestFoldProfit = periodProfits?.length ? Math.max(...periodProfits) : maxValue(byFold);
   const bestSymbolProfit = maxValue(bySymbol);
-  const withoutBestFold = total - bestFoldProfit;
+  const withoutBestFold = (periodProfits?.length ? sum(periodProfits) : total) - bestFoldProfit;
   const withoutBestSymbol = total - bestSymbolProfit;
 
   const reasons: string[] = [];
@@ -106,11 +106,11 @@ export function auditConcentration(trades: AuditTrade[]): AuditRecord {
       reasons.push(`best trade carries ${((bestTrade / total) * 100).toFixed(0)}% of total profit (limit ${MAX_SINGLE_TRADE_SHARE * 100}%)`);
     }
     if (withoutBestFold <= 0) {
-      verdict = "weakened";
+      verdict = "killed";
       reasons.push(`dropping the best fold (${bestFoldProfit.toFixed(2)}) flips total profit to ${withoutBestFold.toFixed(2)}`);
     }
     if (withoutBestSymbol <= 0) {
-      verdict = "weakened";
+      if (verdict === "survived") verdict = "weakened";
       reasons.push(`dropping the best symbol (${bestSymbolProfit.toFixed(2)}) flips total profit to ${withoutBestSymbol.toFixed(2)}`);
     }
   }
@@ -133,8 +133,9 @@ export function auditConcentration(trades: AuditTrade[]): AuditRecord {
 
 // ─── Combined audit ──────────────────────────────────────────────────────────
 
-export function auditEntry(entry: string, trades: AuditTrade[], folds: string[], auditedAt: string): EntryAudit {
-  const audits = [auditSampleAdequacy(trades, folds), auditConcentration(trades)];
+export function auditEntry(entry: string, trades: AuditTrade[], folds: string[], auditedAt: string,
+  periodProfits?: number[]): EntryAudit {
+  const audits = [auditSampleAdequacy(trades, folds), auditConcentration(trades, periodProfits)];
   const verdict: AuditVerdict = audits.some((audit) => audit.verdict === "killed")
     ? "killed"
     : audits.some((audit) => audit.verdict === "weakened")
@@ -150,7 +151,8 @@ export function auditEntry(entry: string, trades: AuditTrade[], folds: string[],
 
 export interface EvaluationArtifact {
   trades?: Array<{ fold?: unknown; symbol?: unknown; profit?: unknown }>;
-  diagnostics?: { folds?: Array<{ name?: unknown }> };
+  diagnostics?: { folds?: Array<{ name?: unknown; start?: unknown; end?: unknown }>;
+    periodProfits?: Array<{ name?: unknown; profit?: unknown }> };
 }
 
 export function artifactTrades(artifact: EvaluationArtifact): AuditTrade[] {
@@ -172,7 +174,12 @@ export function artifactFolds(artifact: EvaluationArtifact, trades: AuditTrade[]
 
 export function auditArtifact(entry: string, artifact: EvaluationArtifact, auditedAt: string): EntryAudit {
   const trades = artifactTrades(artifact);
-  return auditEntry(entry, trades, artifactFolds(artifact, trades), auditedAt);
+  const folds = artifactFolds(artifact, trades);
+  const periodProfits = artifact.diagnostics?.periodProfits;
+  const aligned = periodProfits?.length === folds.length && periodProfits.every((period, index) =>
+    period.name === folds[index] && typeof period.profit === "number" && Number.isFinite(period.profit));
+  return auditEntry(entry, trades, folds, auditedAt,
+    aligned ? periodProfits!.map((period) => period.profit as number) : undefined);
 }
 
 // ─── Archive reconciliation ──────────────────────────────────────────────────
