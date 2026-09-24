@@ -49,13 +49,22 @@ read the local one before editing.
 - **Don't commit secrets.** No API keys, no `.env` files, no agent credentials.
   If you add a new agent integration, read its key from the environment and
   document the variable name.
-- **Hypothesis artifacts under `research/trade-long/hypotheses/` are a record**
-  of what past runs explored and rejected. Adding to them is normal; rewriting
-  history there is not.
+- **The tracked strategy is intentionally neutral.** Do not commit private
+  strategy candidates, market data, forecast caches, campaign IDs, reports, or
+  model weights. Strategy edits are tracked by Git, so use a separate local
+  clone without a remote for personal research when the result should stay
+  private.
 
 ## Reporting a strategy result
 
-If you are contributing a strategy improvement rather than code, include the
-evaluator output (`score:` line), the fold breakdown, and what you falsified
-along the way. A higher score with no account of what was ruled out is not very
-useful — the falsification log is the point.
+If you are contributing a strategy change rather than harness code, include
+the evaluator output (`score:` line), the fold breakdown, and what you
+falsified along the way. Do not include private data or an unpublished actual
+strategy in the public repository.
+
+## Optional TimesFM feature
+
+TimesFM preparation is local and opt-in. Follow
+[`docs/timesfm-strategy-search.md`](docs/timesfm-strategy-search.md); do not
+commit generated forecasts, model weights, campaign reports, or local
+configuration containing campaign IDs.

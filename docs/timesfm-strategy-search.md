@@ -1,13 +1,85 @@
-# Optional forecast data for AutoResearch
+# Optional TimesFM forecast preparation
 
-TimesFM is an additional data source for the AI researcher, not a strategy
-imposed by the engine. The agent writes the ordinary `strategy.ts` and decides
-whether and how to use forecasts, or ignores them entirely. There is no built-in
-forecast entry rule, confirmation filter, stop, target, ranking or scoring bonus.
+TimesFM is an optional input to the research harness. It is not a built-in
+strategy, signal, ranking rule, sizing rule, exit rule, or scoring bonus. The
+public checkout remains useful with the feature disabled, with no market data,
+and with the neutral strategy scaffold unchanged.
 
-## Data contract
+## What is prepared
 
-The optional second argument to `proposeTrade(history, market)` includes:
+Install `uv` for this optional workflow. It manages the launcher's Python 3.12
+environment and locked TimesFM/CPU PyTorch dependencies. The first preparation
+downloads the model weights from Hugging Face; a GPU is not required. Model
+packages and weights are not needed for ordinary evaluation with TimesFM off.
+Once dependencies and weights are cached, `HF_HUB_OFFLINE=1` can be used for
+preparation without fetching weights again.
+
+`research:refresh` uses the configured market database created by
+`market:import`. It reads that database directly; it does not sync a private
+`prices.db`, accept a `--source` database, or add a second market-data path.
+The command generates or resumes the historical forecast campaign described by
+[`docs/timesfm-research.json`](timesfm-research.json), validates that its
+training and research/fold ranges are covered, then enables the selected local
+campaign in the local configuration. It also generates training inputs and
+creates a baseline only if none exists. It always stops before the research
+loop.
+
+```bash
+pnpm run market:import -- ./path/to/licensed-prices.csv
+pnpm run research:refresh
+pnpm run research:loop
+```
+
+The refresh command is resumable. A failed step stops the preparation; it does
+not start the loop or reset existing research state. A local configuration
+backup is made before enabling `evaluation.timesfm`. The normal loop remains
+responsible for strategy attempts and acceptance.
+
+Preview validation and the planned ranges without writes, model imports, or
+configuration changes:
+
+```bash
+pnpm run research:refresh -- --dry-run
+```
+
+An explicitly reviewed settings file can be supplied when needed:
+
+```bash
+pnpm run research:refresh -- --forecast-config ./path/to/reviewed-config.json
+```
+
+`--forecast-config` changes forecast preparation settings only; it does not
+change the public evaluator dates or unlock a holdout. The default pinned
+settings are in `docs/timesfm-research.json`. `research:loop` is an alias for
+the ordinary bounded loop and does not perform refresh work, sync prices,
+generate forecasts, export training CSVs, or reset a baseline.
+
+The selected campaign is recorded as `evaluation.timesfm` with `dbPath`,
+`campaign`, and `model` (`timesfm_ohlcv` or `timesfm_close`). The committed
+configuration omits this block. Forecasts default to a 256-session context,
+a five-session stride, and a 10-session horizon; missing dates stay missing.
+Training and rolling fold dates come from the existing evaluation settings.
+For a fixed research period, `evaluationEnd` must match the end of the configured
+folds; optional `trainingStart` bounds training forecast origins. Keep any final
+holdout outside the configured research ranges; this command does not reserve
+a particular calendar year automatically.
+
+To disable the feature locally, remove `evaluation.timesfm` and rerun
+`pnpm run generate-training` to remove stale forecast samples. The next loop's
+pre-loop check invalidates scores when the supplied features change.
+
+Forecasts are cached under `.autoresearch/timesfm/`. Run preparation while no
+research loop or market-data writer is active. A lock excludes other refresh
+commands; after a hard interruption, verify the previous process is gone
+before removing `.autoresearch/refresh-research.lock`. Completed forecast batches
+survive failures. If training export fails after activation, the validated
+campaign remains selected and the previous configuration is backed up under
+`.autoresearch/`; rerun preparation to finish.
+
+## Forecast boundary
+
+When enabled by the evaluator, a strategy may receive only the current
+symbol's exact-date feature:
 
 ```ts
 timesfm?: {
@@ -17,106 +89,43 @@ timesfm?: {
 }
 ```
 
-`2` means a predicted +2% return, not confidence. The field describes the current
-stock at the last history date. Missing forecasts are unavailable, not zero;
-the strategy owns its missing-data behavior. The existing cache has a
-five-session stride, so many dates have no forecast. Nothing is forward-filled.
+`predictedReturnPct: 2` means a predicted return of positive two percent; it
+is not a probability or confidence score. Missing forecasts are unavailable,
+not zero. Forecasts must not be carried forward, and the strategy must remain
+deterministic and valid when the field is absent. The proposal contract,
+execution costs, walk-forward scoring, and promotion gates do not change.
 
-The data loader reads a pinned development campaign from the forecast cache,
-separate from OHLCV storage. It passes only the forecast, never realized prices
-or outcomes. The backtest and training signal screen use the same symbol/date
-lookup. Their execution and scoring rules remain unchanged. A strategy that
-ignores forecasts behaves identically whether the data is supplied or not.
+Evaluation and the signal screen use the same symbol/date lookup. Training
+CSV exports and the signal screen stop at the training cutoff; evaluation
+supplies forecasts within each fold. Each proposal sees only its own symbol
+and current date. Raw cache rows, realized outcomes, and evaluation forecasts
+are not training inputs for the agent. No Python package, model library,
+database read, or model inference belongs in `strategy.ts`.
 
-No Python, model, database or additional library belongs in the generated
-`strategy.ts`. The proposal contract is unchanged. External consumers must
-supply the same optional context if a strategy uses it.
+## Licensing and point-in-time limits
 
-## Research workflow
+The pinned model is
+[`google/timesfm-3.0-pytorch`](https://huggingface.co/google/timesfm-3.0-pytorch/tree/43046b85ec22d584a13f8098c2ed39c889e129c2)
+at revision
+`43046b85ec22d584a13f8098c2ed39c889e129c2`. The model card identifies the
+separate [TimesFM Non-Commercial License v1.0](https://huggingface.co/google/timesfm-3.0-pytorch/blob/43046b85ec22d584a13f8098c2ed39c889e129c2/LICENSE).
+It limits model use to non-commercial, non-production research, restricts
+commercial or production use of outputs, and prohibits distribution of the
+model or derivatives under that licence. The harness's MIT licence does not
+replace these terms. Weights are downloaded separately and are not included here.
 
-1. Configure `evaluation.timesfm` with `dbPath`, `campaign` and `model`
-   (`timesfm_ohlcv` or `timesfm_close`), plus compatible `trainingStart`,
-   `trainingEnd`, fixed folds and `evaluationEnd`.
-2. Run `pnpm run generate-training`. It exports training-only forecast CSVs
-   alongside the existing training inputs. Samples appear in the agent prompt.
-3. Run the normal AutoResearch loop. The agent chooses its strategy logic; the
-   normal evaluator supplies matching forecasts when configured.
+The [pinned model card](https://huggingface.co/google/timesfm-3.0-pytorch/blob/43046b85ec22d584a13f8098c2ed39c889e129c2/README.md)
+also describes pretraining data with historical cutoffs,
+including Wikipedia pageviews through November 2023 and Google Trends through
+the end of 2022. Forecast date alignment and leakage controls therefore do not
+by themselves establish a fully point-in-time investable result. Historical
+forecast accuracy is not evidence of profitability, and this workflow makes no
+profitability, performance, or investment-advice claim.
 
-Contract checks cover missing, positive and negative forecast inputs; no check
-requires using forecasts. Configuration/feature fingerprints invalidate old
-scores when the supplied data changes. Search agents cannot read the raw cache
-or evaluation/holdout outcomes.
+## Repository boundary
 
-## Separate preparation and research commands
-
-Once this checkout has a compatible forecast-enabled research configuration:
-
-```sh
-# After updating prices.db, prepare inputs (never starts the agent):
-pnpm run research:refresh
-
-# Start only the normal research loop using prepared inputs:
-pnpm run research:loop
-
-# Validate configuration and show the sequence without writes:
-pnpm run research:refresh --dry-run
-```
-
-The runner syncs `db/prices.db` into the configured market database, runs the
-resumable historical forecast generator, validates the completed campaign's
-training/fold coverage, updates only its campaign ID, exports training CSVs,
-and creates a baseline only if none exists. It always stops there. A baseline is
-an evaluation of the current strategy, not an AI research attempt. Existing
-best results are not reset. `--prepare-only` remains an alias for this default.
-
-`research:loop` runs only the ordinary bounded loop and its existing pre-loop
-checks, which re-evaluate stale scores. It does not sync prices, generate
-forecasts or export training CSVs. Preparation never prescribes forecast use,
-changes research dates, or commits/pushes code.
-
-Use `--source /path/to/prices.db` for another source and `--forecast-config
-/path/to/config.json` for an explicitly configured historical campaign. The
-generator's development period must cover the research dates and must not
-overlap the reserved benchmark holdout. The default remains 2022–2024: newly
-synced prices outside that period do not extend the forecast window. This is
-not a latest-day/live forecast generator.
-
-Completed windows are reused; changed campaign inputs generate a new campaign.
-If the campaign ID changes, the previous config is backed up under
-`.autoresearch/autoresearch.config.before-refresh-*.json`. A failed step stops
-the pipeline; already synced data and completed forecast work are retained for
-retry. A training-export failure leaves the validated campaign configured but
-does not start the loop.
-
-Run this only when no other research loop or market-data writer is active.
-The runner holds `.autoresearch/refresh-research.lock` through its entire run
-to exclude other invocations. After a hard interruption, confirm the old process
-is gone before removing a leftover empty lock directory. It requires the same
-`pnpm`, `uv` and model access/cache as the individual commands; `HF_HUB_OFFLINE=1`
-can be supplied when the model is already cached.
-
-## Existing cache and research dates
-
-The active search remains unchanged: its training window ends in 2017, whereas
-the cached development forecasts cover 2022–2024. Enabling that cache against
-the current dates fails with a coverage error rather than silently omitting it.
-
-`pnpm run timesfm:search-config` prepares an optional config with training in
-2022 and four half-year evaluation folds in 2023–2024. It writes
-`.autoresearch/timesfm-search.config.json` exclusively (or a path supplied as
-the first argument), validates coverage, and does not start a search or replace
-the active config. If that file already exists, use a new output path.
-
-To use it, provide the market database and forecast cache in a separate research
-checkout, use the prepared file as its `autoresearch.config.json`, regenerate
-training data, and run the normal loop. Keep its scores and champion separate
-because the evaluation dates differ. No separate TimesFM trading/comparison
-runner is needed. Historical comparison reports are not AutoResearch results.
-
-To measure the value of providing forecasts to the researcher, compare separate
-searches with identical dates and attempt budgets, differing only in availability
-of this input. This is an experiment design, not a required strategy rule.
-
-The 2025 holdout remains locked. Retrospective model pretraining and adjusted
-market-data limitations still apply; date alignment alone does not establish a
-fully point-in-time investable result.
+Do not commit market data, training CSVs, forecast databases, model weights,
+campaign IDs, reports, or actual strategy candidates. Keep TimesFM preparation
+artifacts under ignored local paths. Because `strategy.ts` is tracked, use a
+separate local clone without a remote for private strategy research rather than
+placing a personal strategy in this starter repository.

@@ -24,6 +24,7 @@
     "research:refresh": "tsx scripts/refresh-research.ts",
     "research:loop": "tsx src/cli.ts loop",
     "timesfm:search-config": "tsx scripts/timesfm-search-config.ts",
+    "test:timesfm": "python3 -m unittest discover -s test -p 'test_timesfm_*.py'",
     "check": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "ar": "tsx src/cli.ts",

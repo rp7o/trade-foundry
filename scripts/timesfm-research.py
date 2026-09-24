@@ -9,7 +9,9 @@
 # explicit = true
 # ///
 """Past-only forecast preparation for AutoResearch, separate from the benchmark."""
+
 from timesfm_research import main
+
 
 if __name__ == "__main__":
     main()

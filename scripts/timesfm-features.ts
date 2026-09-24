@@ -28,8 +28,14 @@ export function loadTimesfmFeatures(
     const campaign = db.prepare("SELECT manifest, status FROM campaigns WHERE id = ?").get(config.campaign);
     if (!campaign || campaign.status !== "complete") throw new Error("TimesFM campaign must exist and be complete");
     const manifest = JSON.parse(String(campaign.manifest));
-    if (!["development", "research"].includes(manifest.partition) || !manifest.config?.revision) {
+    if (!["development", "research"].includes(manifest.partition) ||
+        typeof manifest.config?.revision !== "string" || !/^[a-f0-9]{40}$/.test(manifest.config.revision)) {
       throw new Error("Strategy search requires a pinned research/development campaign; holdout forecasts are forbidden");
+    }
+    if (manifest.partition === "research" &&
+        (manifest.config.variant !== config.model || manifest.config.horizon !== 10 ||
+          !Array.isArray(manifest.config.symbols) || symbols.some(symbol => !manifest.config.symbols.includes(symbol)))) {
+      throw new Error("TimesFM campaign model, horizon and symbols must match the requested research inputs");
     }
     const allowed = manifest.partition === "research" ? manifest.config.ranges : [manifest.config.development];
     if (!Array.isArray(allowed) || !allowed.length || allowed.some(r => !r?.start || !r?.end) ||

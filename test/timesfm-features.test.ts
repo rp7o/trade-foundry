@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -21,7 +21,7 @@ function fixture(t: TestContext) {
     CREATE TABLE forecasts (campaign TEXT, symbol TEXT, model TEXT, horizon INTEGER,
     origin TEXT, origin_price REAL, forecast_price REAL, actual_price REAL, target_date TEXT);`);
   const manifest = { partition: "development", data_sha256: "input-hash", config: {
-    revision: "pinned", stride: 5, development: { start: "2022-01-01", end: "2024-12-31" },
+    revision: "a".repeat(40), stride: 5, development: { start: "2022-01-01", end: "2024-12-31" },
   } };
   db.prepare("INSERT INTO campaigns VALUES (?, ?, ?)").run("test", JSON.stringify(manifest), "complete");
   db.exec(`INSERT INTO forecasts VALUES ('test', 'AAA', 'timesfm_ohlcv', 10, '2022-01-20', 100, 102, 999, '2022-02-03');
@@ -52,6 +52,8 @@ test("loader fails closed on absent coverage, incomplete campaigns, and holdout 
   assert.throws(() => loadTimesfmFeatures(config, ["AAA"], training), /complete/);
   db.prepare("UPDATE campaigns SET status = 'complete', manifest = ?").run(JSON.stringify({ ...manifest, partition: "holdout" }));
   assert.throws(() => loadTimesfmFeatures(config, ["AAA"], training), /holdout forecasts are forbidden/);
+  db.prepare("UPDATE campaigns SET manifest = ?").run(JSON.stringify({ ...manifest, config: { ...manifest.config, revision: "main" } }));
+  assert.throws(() => loadTimesfmFeatures(config, ["AAA"], training), /pinned/);
 });
 
 test("lookup never carries forward or crosses symbols and returns a defensive whitelist copy", t => {
@@ -63,6 +65,24 @@ test("lookup never carries forward or crosses symbols and returns a defensive wh
   const value = timesfmAsOf(forecasts, "AAA", "2022-01-20")!;
   value.predictedReturnPct = -100;
   assert.ok(timesfmAsOf(forecasts, "AAA", "2022-01-20")!.predictedReturnPct > 0);
+  for (const invalid of [
+    { ...value, asOf: "2022-01-21" }, { ...value, horizonDays: 5 }, { ...value, predictedReturnPct: NaN },
+  ]) {
+    assert.equal(timesfmAsOf({ AAA: { "2022-01-20": invalid } } as any, "AAA", "2022-01-20"), undefined);
+  }
+});
+
+test("research campaign metadata must agree with the selected model, horizon and universe", t => {
+  const { config, db, manifest } = fixture(t);
+  const research = { ...manifest, partition: "research", config: { ...manifest.config,
+    ranges: training, symbols: ["AAA"], variant: config.model, horizon: 10 } };
+  const setManifest = (value: unknown) => db.prepare("UPDATE campaigns SET manifest = ?").run(JSON.stringify(value));
+  setManifest(research);
+  assert.ok(loadTimesfmFeatures(config, ["AAA"], training).forecasts.AAA);
+  for (const change of [{ variant: "timesfm_close" }, { horizon: 5 }, { symbols: ["BBB"] }]) {
+    setManifest({ ...research, config: { ...research.config, ...change } });
+    assert.throws(() => loadTimesfmFeatures(config, ["AAA"], training), /must match/);
+  }
 });
 
 test("signal screen injects exact-date features and never exposes post-training dates", t => {
@@ -169,4 +189,80 @@ test("training CSV export contains only training forecast features", t => {
   const csv = readFileSync(join(dir, "research/trade-long/training-data/timesfm-AAA.csv"), "utf8");
   assert.ok(csv.startsWith("asOf,horizonDays,predictedReturnPct\n2022-01-20,10,"));
   assert.ok(!csv.includes("2023") && !csv.includes("actual_price"));
+});
+
+test("walk-forward evaluation transports forecasts through its wrapper and worker", t => {
+  const dir = mkdtempSync(join(tmpdir(), "timesfm-walkforward-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "research/trade-long"), { recursive: true });
+  writeFileSync(join(dir, "research/trade-long/strategy.ts"), `
+    export const STRATEGY_BOILERPLATE = false;
+    export function proposeTrade(history, market) {
+      const last = history.at(-1);
+      if (history.length !== 90 || market?.timesfm?.asOf !== last.date) return null;
+      if (market.timesfm.predictedReturnPct >= 0 || market.index?.at(-1)?.date !== last.date) return null;
+      return { side: 'long', entry: { min: 99, max: 101 }, stopLoss: 95, target: 110,
+        maxHoldDays: 3, setup: 'synthetic', regime: 'test', strategyVersion: 'fixture' };
+    }
+  `);
+  const marketPath = join(dir, "market.db");
+  const market = new DatabaseSync(marketPath);
+  market.exec(`CREATE TABLE prices (symbol TEXT, date TEXT, open REAL, high REAL, low REAL,
+    close REAL, adj_close REAL, volume INTEGER, PRIMARY KEY(symbol, date));`);
+  const insert = market.prepare("INSERT INTO prices VALUES (?, ?, 100, 101, 99, 100, 100, 1000000)");
+  for (let i = 0; i < 250; i++) {
+    const date = new Date(Date.UTC(2022, 11, i + 1)).toISOString().slice(0, 10);
+    for (const symbol of ["AAA", "BBB", "^AXJO"]) insert.run(symbol, date);
+  }
+  market.close();
+  const cache = join(dir, "forecasts.db");
+  const db = new DatabaseSync(cache);
+  const ranges = [{ name: "training", start: "2022-12-01", end: "2022-12-31" },
+    { name: "fold-1", start: "2023-01-01", end: "2023-06-30" }];
+  db.exec(`CREATE TABLE campaigns (id TEXT, manifest TEXT, status TEXT);
+    CREATE TABLE forecasts (campaign TEXT, symbol TEXT, model TEXT, horizon INTEGER,
+    origin TEXT, origin_price REAL, forecast_price REAL);`);
+  db.prepare("INSERT INTO campaigns VALUES (?, ?, ?)").run("synthetic", JSON.stringify({
+    partition: "research", config: { revision: "a".repeat(40), stride: 5, ranges,
+      variant: "timesfm_ohlcv", horizon: 10, symbols: ["AAA", "BBB"] }, data_sha256: "synthetic",
+  }), "complete");
+  const forecast = db.prepare("INSERT INTO forecasts VALUES ('synthetic', ?, 'timesfm_ohlcv', 10, ?, 100, ?)");
+  for (const symbol of ["AAA", "BBB"]) {
+    forecast.run(symbol, "2022-12-31", 102);
+    forecast.run(symbol, "2023-04-06", symbol === "AAA" ? 98 : 102);
+  }
+  db.close();
+  writeFileSync(join(dir, "autoresearch.config.json"), JSON.stringify({
+    evaluation: { dbPath: marketPath, symbols: ["AAA", "BBB"], trainingStart: "2022-12-01",
+      trainingEnd: "2022-12-31", foldStart: "2023-01-01", foldMonths: 6, foldCount: 1,
+      rollingYears: 1, evaluationEnd: "2023-06-30",
+      timesfm: { dbPath: cache, campaign: "synthetic", model: "timesfm_ohlcv" } },
+    executionCosts: { brokeragePerSide: 3, slippageBpsPerSide: 5 },
+  }));
+  execFileSync(process.execPath, ["--import", resolve("node_modules/tsx/dist/loader.mjs"),
+    resolve("research/trade-long/eval.ts")], { cwd: dir });
+  const artifact = JSON.parse(readFileSync(join(dir, ".autoresearch/trade-long/latest.json"), "utf8"));
+  assert.equal(artifact.secondary.find((item: any) => item.name === "totalModerateTrades").value, 1);
+});
+
+test("scoring hash changes with forecasts but not realized outcomes", t => {
+  const { config, db } = fixture(t);
+  const dir = mkdtempSync(join(tmpdir(), "timesfm-hash-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const marketPath = join(dir, "market.db");
+  const market = new DatabaseSync(marketPath);
+  market.exec("CREATE TABLE prices (symbol TEXT, date TEXT); INSERT INTO prices VALUES ('AAA', '2023-12-31')");
+  market.close();
+  const configPath = join(dir, "autoresearch.config.json");
+  writeFileSync(configPath, JSON.stringify({ evaluation: {
+    dbPath: marketPath, symbols: ["AAA"], trainingStart: "2022-01-01", trainingEnd: "2022-12-31",
+    foldStart: "2023-01-01", foldMonths: 12, foldCount: 1, rollingYears: 1, evaluationEnd: "2023-12-31", timesfm: config,
+  }, executionCosts: { brokeragePerSide: 3, slippageBpsPerSide: 5 } }));
+  const hash = () => execFileSync(process.execPath, ["--import", resolve("node_modules/tsx/dist/loader.mjs"),
+    resolve("scripts/pre-loop-utils.ts"), "hash", configPath], { cwd: dir, encoding: "utf8" }).trim();
+  const initial = hash();
+  db.exec("UPDATE forecasts SET actual_price = 500");
+  assert.equal(hash(), initial);
+  db.exec("UPDATE forecasts SET forecast_price = 105 WHERE origin = '2023-01-20'");
+  assert.notEqual(hash(), initial);
 });

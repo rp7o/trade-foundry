@@ -102,9 +102,10 @@ export function runSignalScreen(
     for (let i = lookback - 1; i < candles.length - 1; i++) {
       if (options.trainingStart && candles[i].date < options.trainingStart) continue;
       const window = candles.slice(i - lookback + 1, i + 1);
+      const timesfm = timesfmAsOf(options.timesfm, symbol, candles[i].date);
       const market = {
         ...marketAsOf(trainingMarket, candles[i].date, lookback),
-        timesfm: timesfmAsOf(options.timesfm, symbol, candles[i].date),
+        ...(timesfm ? { timesfm } : {}),
       };
       let proposal: TradeProposal | null;
       try {

@@ -1,4 +1,4 @@
-// Vendored verbatim from the trading-strategy-engine project.
+// Adapted from the trading-strategy-engine contract with optional forecast cases.
 //
 // Validates that a strategy file exports a well-behaved proposeTrade(history):
 // correct proposal shape, no mutation of the supplied history, and sane
